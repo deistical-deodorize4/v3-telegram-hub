@@ -1,0 +1,32 @@
+# ── Secrets ──
+.env
+.env_keys
+
+# ── Python bytecode & cache ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.cache/
+.cache/
+
+# ── Virtual environment ──
+venv/
+.venv/
+
+# ── Personal data (CSV logs) ──
+data/study_log.csv
+data/finance_log.csv
+
+# ── Writing corrector cache ──
+writing_corrector/.cache/
+writing_corrector/outputs/
+
+# ── IDE / editors ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS junk ──
+.DS_Store
+Thumbs.db
