@@ -1,5 +1,5 @@
 """
-Shared utilities for RaspiPi 02 AI Hub.
+Shared utilities for pi02w Hub.
 
 Retry logic for Gemini API calls, file-based caching, logging setup,
 and other cross-cutting helpers used by multiple modules.

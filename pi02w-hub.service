@@ -1,5 +1,5 @@
 [Unit]
-Description=RaspiPi 02 AI Hub — Telegram Bot
+Description=pi02w Hub — Telegram Bot
 After=network-online.target
 Wants=network-online.target
 

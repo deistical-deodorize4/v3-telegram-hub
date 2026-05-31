@@ -1,5 +1,5 @@
 """
-Centralised configuration for RaspiPi 02 AI Hub.
+Centralised configuration for pi02w Hub.
 
 All paths, environment variables, and performance tunables live here
 so there is a single source of truth across CLI and Telegram modes.

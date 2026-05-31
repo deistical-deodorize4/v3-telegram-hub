@@ -1,5 +1,5 @@
 """
-CLI entry point for RaspiPi 02 AI Hub.
+CLI entry point for pi02w Hub.
 
 Runs an infinite-loop menu that dispatches to each feature module.
 """
@@ -33,7 +33,7 @@ def _run_monitor() -> None:
 
 MENU = """
 ╔══════════════════════════════════╗
-║     🍓 RaspiPi 02 — AI Hub       ║
+║     🍓 pi02w Hub                 ║
 ╠══════════════════════════════════╣
 ║  1. 🌤   Weather Forecast         ║
 ║  2. 🤖  Chatbot                  ║
