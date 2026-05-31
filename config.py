@@ -80,9 +80,10 @@ WEATHER_FEATURES: list[str] = [
 WEATHER_TARGETS: list[int] = [0, 6, 24]
 WEATHER_LOOK_BACK: int = 48
 
-# AEMET station for Zaragoza Aeropuerto (falls back to Valdespartera)
-AEMET_STATION: str = "9434"  # Zaragoza Aeropuerto
-# Valdespartera would be "9562" if needed in future
+# AEMET stations for Zaragoza (Valdespartera → Aeropuerto fallback)
+AEMET_STATION_VALDESPARTERA: str = "9434P"  # Valdespartera (primary)
+AEMET_STATION_AEROPUERTO: str = "9434"      # Aeropuerto (fallback)
+AEMET_MUNICIPIO_ID: str = "50297"           # Zaragoza municipio
 
 # ---------------------------------------------------------------------------
 # Gemini model name (single source of truth)

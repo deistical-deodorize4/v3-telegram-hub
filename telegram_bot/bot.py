@@ -9,18 +9,14 @@ Europe/Madrid with spikes, averages, and alerts.
 from __future__ import annotations
 
 import csv
-import io
 import logging
 import os
 import sys
 import time
-from collections import defaultdict
-from contextlib import redirect_stdout
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import joblib
 import requests
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -36,6 +32,7 @@ if _PROJECT_ROOT not in sys.path:
 
 import config as cfg
 from system_monitor import monitor as sysmon
+from weather_forecaster import weather_aemet
 from utils import log, setup_logging
 
 # ---------------------------------------------------------------------------
@@ -238,13 +235,21 @@ def _seconds_until_sampling_slot() -> float:
     return (75 - minutes) * 60 - sec  # next hour at :15
 
 
-def _seconds_until_22_madrid() -> float:
-    """Return seconds until next 22:00 Europe/Madrid."""
+def _seconds_until(hour: int, minute: int = 0) -> float:
+    """Return seconds until next *hour:minute* Europe/Madrid."""
     now = datetime.now(MADRID_TZ)
-    target = now.replace(hour=22, minute=0, second=0, microsecond=0)
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if now >= target:
         target += timedelta(days=1)
     return (target - now).total_seconds()
+
+
+def _seconds_until_22_madrid() -> float:
+    return _seconds_until(22, 0)
+
+
+def _seconds_until_09_madrid() -> float:
+    return _seconds_until(9, 0)
 
 
 def _check_open_meteo() -> str:
@@ -322,6 +327,22 @@ async def sample_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     daily_stats.record(snap)
 
 
+async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Build and send the morning weather brief (09:00), then re-schedule."""
+    report = weather_aemet.format_morning_report()
+    if report:
+        await context.bot.send_message(
+            chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=ALLOWED_USER,
+            text="☀️ Buenos días — AEMET data unavailable this morning.",
+        )
+    # Re-schedule for tomorrow
+    _schedule_morning_report(context.job_queue)
+
+
 async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Build and send the daily tl;dr, then re-schedule for tomorrow."""
     report = daily_stats.build_report()
@@ -343,6 +364,13 @@ def _schedule_sampling(job_queue) -> None:
     delay = _seconds_until_sampling_slot()
     job_queue.run_repeating(sample_job, interval=1800, first=delay)
     log.info("Daily stats sampling started (first in %.0fs, then every 30 min)", delay)
+
+
+def _schedule_morning_report(job_queue) -> None:
+    """Schedule a one-shot brief for 09:00 Europe/Madrid (re-schedules itself)."""
+    delay = _seconds_until_09_madrid()
+    job_queue.run_once(morning_report_job, delay)
+    log.info("Morning report scheduled at 09:00 Madrid (in %.0fs)", delay)
 
 
 def _schedule_daily_report(job_queue) -> None:
@@ -465,21 +493,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    # ------- Weather -------
+    # ------- Weather (AEMET) -------
     if text == "🌤 Weather":
-        await update.message.reply_text("⏳ Fetching forecast…")
+        await update.message.reply_text("⏳ Fetching AEMET data…")
         try:
-            f = io.StringIO()
-            with redirect_stdout(f):
-                scaler = joblib.load(str(cfg.WEATHER_SCALER))
-                from weather_forecaster import forecast
-
-                raw = forecast.fetch_recent()
-                output = forecast.run_inference(raw, scaler)
-                forecast.display_forecast(output, scaler, raw)
-            await update.message.reply_text(
-                f"```{f.getvalue()}```", parse_mode="Markdown"
-            )
+            report = weather_aemet.format_ondemand()
+            if report:
+                await update.message.reply_text(f"```{report}```", parse_mode="Markdown")
+            else:
+                await update.message.reply_text(
+                    "❌ Could not fetch AEMET data. Check your API key and internet."
+                )
         except Exception as exc:
             await update.message.reply_text(f"Error: {exc}")
         return
@@ -664,6 +688,7 @@ def main() -> None:
 
     # --- Schedule background jobs ---
     _schedule_sampling(app.job_queue)
+    _schedule_morning_report(app.job_queue)
     _schedule_daily_report(app.job_queue)
 
     log.info("🤖 Bot running — polling for updates…")
