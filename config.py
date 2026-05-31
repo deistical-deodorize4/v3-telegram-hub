@@ -32,8 +32,11 @@ WEATHER_SCALER: Path = MODEL_DIR / "weather_scaler.pkl"
 WEATHER_KERAS_MODEL: Path = MODEL_DIR / "weather_keras_model.keras"
 WEATHER_SAVED_MODEL_DIR: Path = MODEL_DIR / "weather_saved_model"
 
-# Writing corrector
-WRITING_CACHE_DIR: Path = PROJECT_ROOT / "writing_corrector" / ".cache"
+# Temporary directory (maps to tmpfs on Pi — protects SD card from wear)
+TEMP_DIR: Path = Path("/tmp") / PROJECT_ROOT.name
+
+# Writing corrector — cache goes to RAM, inputs/outputs stay on SD
+WRITING_CACHE_DIR: Path = TEMP_DIR / "writing-cache"
 WRITING_INPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "inputs"
 WRITING_OUTPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "outputs"
 
@@ -84,6 +87,8 @@ WEATHER_LOOK_BACK: int = 48
 AEMET_STATION_VALDESPARTERA: str = "9434P"  # Valdespartera (primary)
 AEMET_STATION_AEROPUERTO: str = "9434"      # Aeropuerto (fallback)
 AEMET_MUNICIPIO_ID: str = "50297"           # Zaragoza municipio
+AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoint)
+AEMET_UVI_LOCALIDAD: str = "Zaragoza"      # Localidad name in UV index response
 
 # ---------------------------------------------------------------------------
 # Gemini model name (single source of truth)
@@ -93,6 +98,7 @@ GEMINI_MODEL: str = "gemini-2.5-flash"
 # ---------------------------------------------------------------------------
 # Ensure essential directories exist
 # ---------------------------------------------------------------------------
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 WRITING_CACHE_DIR.mkdir(parents=True, exist_ok=True)

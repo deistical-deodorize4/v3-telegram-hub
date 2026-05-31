@@ -8,6 +8,7 @@ Europe/Madrid with spikes, averages, and alerts.
 
 from __future__ import annotations
 
+from collections import defaultdict
 import csv
 import logging
 import os
@@ -74,6 +75,7 @@ class DailyStats:
         """Append a snapshot to today's sample list."""
         today = date.today().isoformat()
         now_str = datetime.now().strftime("%H:%M")
+        ld = snap.load_avg
         self._samples[today].append({
             "time_str": now_str,
             "timestamp": time.time(),
@@ -85,6 +87,10 @@ class DailyStats:
             "disk_percent": snap.disk.percent if snap.disk else 0.0,
             "disk_free_gb": snap.disk.free_gb if snap.disk else 0.0,
             "throttled": snap.throttled.state if snap.throttled else "ok",
+            "load_1m": ld.one["value"] if ld else None,
+            "load_5m": ld.five["value"] if ld else None,
+            "load_15m": ld.fifteen["value"] if ld else None,
+            "load_cores": ld.cores if ld else None,
         })
 
     def build_report(self, day: str | None = None) -> str | None:
@@ -172,6 +178,18 @@ class DailyStats:
         disk_alert = "  ⚠️" if disk_pct > 75 else ""
         lines.append(f"💽 Disk · {disk_free:.1f}GB free ({disk_pct:.0f}%){disk_alert}")
 
+        # Load average line
+        load_1m_vals = [s["load_1m"] for s in samples if s["load_1m"] is not None]
+        if load_1m_vals:
+            load_1m_avg = sum(load_1m_vals) / len(load_1m_vals)
+            load_1m_max = max(load_1m_vals)
+            cores = samples[-1].get("load_cores", 4) or 4
+            load_alert = "  ⚠️" if load_1m_max > cores else ""
+            lines.append(
+                f"📊 Load · avg {load_1m_avg:.2f} · max {load_1m_max:.2f} "
+                f"({cores} cores){load_alert}"
+            )
+
         # SD wear
         sd_wear = _read_sd_wear()
         if sd_wear:
@@ -183,10 +201,18 @@ class DailyStats:
 
         # ---- Alerts section ----
         alerts = []
+        if cpu_avg > 80:
+            alerts.append(
+                f"• CPU avg at {cpu_avg:.0f}% (> 80% threshold)"
+            )
         if ram_free_now < 150:
             alerts.append(
                 f"• RAM free critically low: {ram_free_now:.0f}MB (< 150MB) "
                 f"at {ram_min_free_s['time_str']}"
+            )
+        if load_1m_vals and load_1m_max > cores:
+            alerts.append(
+                f"• Load peaked at {load_1m_max:.2f} (saturated, ≥ {cores} cores)"
             )
         if temp_max_s and temp_max_s["temp"] and temp_max_s["temp"] > 65:
             alerts.append(
@@ -381,6 +407,50 @@ def _schedule_daily_report(job_queue) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Startup / boot notification
+# ---------------------------------------------------------------------------
+
+
+def _get_uptime() -> float:
+    """Return system uptime in hours (reads /proc/uptime)."""
+    try:
+        with open("/proc/uptime") as f:
+            seconds = float(f.read().split()[0])
+            return seconds / 3600
+    except (FileNotFoundError, ValueError, IndexError):
+        return 0.0
+
+
+async def startup_notification(app: Application) -> None:
+    """Send a boot notification once when the bot connects.
+
+    If system uptime is short (< 10 min), it was likely a power-cycle
+    (⚠️).  Otherwise it's just a normal process restart (ℹ️).
+    """
+    now = datetime.now().strftime("%H:%M %Z")
+    uptime_h = _get_uptime()
+
+    if uptime_h < 0.17:  # less than ~10 minutes
+        icon = "⚠️"
+        note = "Posible reinicio/corte de luz"
+    else:
+        icon = "ℹ️"
+        note = "Bot reiniciado (soft)"
+
+    msg = (
+        f"{icon} *Pi Zero AI Hub*\n"
+        f"🕐 {now}\n"
+        f"⏱ uptime: {uptime_h:.1f}h  ·  {note}"
+    )
+    try:
+        await app.bot.send_message(
+            chat_id=ALLOWED_USER, text=msg, parse_mode="Markdown"
+        )
+    except Exception:
+        log.warning("Could not send startup notification")
+
+
+# ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
 user_sessions: dict[int, dict[str, Any]] = {}
@@ -499,13 +569,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             report = weather_aemet.format_ondemand()
             if report:
-                await update.message.reply_text(f"```{report}```", parse_mode="Markdown")
+                await update.message.reply_text(report, parse_mode="Markdown")
             else:
                 await update.message.reply_text(
                     "❌ Could not fetch AEMET data. Check your API key and internet."
                 )
         except Exception as exc:
-            await update.message.reply_text(f"Error: {exc}")
+            await update.message.reply_text(f"❌ AEMET error: {exc}")
         return
 
     # ------- Chatbot -------
@@ -678,7 +748,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def main() -> None:
     """Start the polling bot with scheduled jobs."""
-    app = Application.builder().token(TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(startup_notification)
+        .build()
+    )
 
     # --- Register handlers ---
     app.add_handler(CommandHandler("start", start))

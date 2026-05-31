@@ -1,0 +1,22 @@
+[Unit]
+Description=RaspiPi 02 AI Hub — Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/telegram-bot
+ExecStart=/usr/bin/python3 /home/pi/telegram-bot/telegram_bot/bot.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# Harden the service
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

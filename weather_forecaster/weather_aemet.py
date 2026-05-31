@@ -4,13 +4,26 @@ AEMET weather module — Zaragoza (Valdespartera → Aeropuerto fallback).
 Provides current observations + hourly municipio forecast through
 the official AEMET OpenData API.  No ML, no TFLite — just the
 Spanish state meteorological agency's professional forecast.
+
+New in v2:
+  - Feels-like temperature (sensTermica) from hourly forecast data
+  - Wind direction as compass point (N/NE/E/SE/S/SW/W/NW)
+  - Sunrise & sunset times (orto/ocaso) from the municipio forecast
+  - UV Index from AEMET specific prediction endpoint
+  - Weather warnings (avisos) for Aragón via CAP endpoint
+  - Unicode temp sparkline for visual temperature trend
+  - Weekday names (lun/mar/mié/jue/vie/sáb/dom) in forecast
+  - Telegram Markdown formatting in morning brief
+  - Richer on-demand display
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, date, timedelta
+from typing import Any
 
 import requests
 
@@ -22,9 +35,14 @@ from config import (  # noqa: E402
     AEMET_STATION_VALDESPARTERA,
     AEMET_STATION_AEROPUERTO,
     AEMET_MUNICIPIO_ID,
-    WEATHER_LAT,
-    WEATHER_LON,
+    AEMET_CCAA_ARAGON,
+    AEMET_UVI_LOCALIDAD,
+    FORECAST_CACHE_SECONDS,
 )
+
+# ---------------------------------------------------------------------------
+# Lookup tables
+# ---------------------------------------------------------------------------
 
 SKY_CODES: dict[str, str] = {
     "1": "☀️ Despejado",
@@ -47,16 +65,71 @@ SKY_CODES: dict[str, str] = {
     "21": "🌫 Calima",
 }
 
+SKY_SHORT: dict[str, str] = {
+    "1": "☀️",
+    "2": "🌤",
+    "3": "⛅",
+    "4": "☁️",
+    "5": "☁️",
+    "6": "🌧",
+    "7": "🌦",
+    "11": "🌧",
+    "12": "🌧",
+    "13": "⛈",
+    "14": "🌧",
+    "15": "⛈",
+    "16": "🌨",
+    "17": "🌨",
+    "18": "🌨",
+    "19": "🌫",
+    "20": "🌫",
+    "21": "🌫",
+}
+
+WEEKDAY_ES: list[str] = [
+    "lun", "mar", "mié", "jue", "vie", "sáb", "dom",
+]
+
+UV_LEVELS: list[tuple[int, str]] = [
+    (0, "Bajo"),
+    (3, "Moderado"),
+    (6, "Alto"),
+    (8, "Muy Alto"),
+    (11, "Extremo"),
+]
+
+WARNING_LEVELS: dict[str, tuple[str, str]] = {
+    "1": ("🟢", "Verde (sin riesgo)"),
+    "2": ("🟡", "Amarillo"),
+    "3": ("🟠", "Naranja"),
+    "4": ("🔴", "Rojo"),
+}
+
+# Compass rose: 16 points
+COMPASS_POINTS: list[str] = [
+    "N", "NNE", "NE", "ENE",
+    "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW",
+    "W", "WNW", "NW", "NNW",
+]
+
+
 # ---------------------------------------------------------------------------
-# AEMET API helper — handles the two-step request/redirect pattern
+# AEMET API helper — two-step request/redirect pattern
 # ---------------------------------------------------------------------------
 
 
-def _aemet_get(endpoint: str, timeout: int = 15) -> list | dict | None:
+def _aemet_get(endpoint: str, timeout: int = 15,
+               data_timeout: int = 20, max_retries: int = 2) -> list | dict | None:
     """Make an AEMET API call, follow the data redirect, return the result.
 
-    The AEMET API always responds with a JSON containing a ``datos`` URL
-    that must be fetched separately to obtain the actual payload.
+    *timeout* applies to the initial API metadata request.
+    *data_timeout* applies to the second request (the actual data shard),
+    which can be much slower than the metadata step.
+
+    Retries up to *max_retries* times on transient failures.  The AEMET
+    servers are notoriously intermittent, so a retry or two avoids most
+    "no data" errors in practice.
     """
     if not AEMET_API_KEY:
         return None
@@ -64,30 +137,96 @@ def _aemet_get(endpoint: str, timeout: int = 15) -> list | dict | None:
     base = "https://opendata.aemet.es/opendata/api"
     url = f"{base}{endpoint}"
 
-    try:
-        # Step 1: get the data URL
-        r1 = requests.get(url, params={"api_key": AEMET_API_KEY}, timeout=timeout)
-        r1.raise_for_status()
-        body = r1.json()
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            # Step 1: get the data URL (metadata)
+            r1 = requests.get(
+                url,
+                params={"api_key": AEMET_API_KEY},
+                timeout=timeout,
+            )
+            r1.raise_for_status()
+            body = r1.json()
 
-        datos_url = body.get("datos")
-        if not datos_url:
-            return None
+            datos_url = body.get("datos")
+            if not datos_url:
+                return None
 
-        # Step 2: fetch the actual data
-        r2 = requests.get(datos_url, timeout=timeout)
-        r2.raise_for_status()
-        return r2.json()
-    except requests.RequestException:
-        return None
+            # Step 2: fetch the actual data (data shard — can be very slow)
+            r2 = requests.get(datos_url, timeout=data_timeout)
+            r2.raise_for_status()
+            return r2.json()
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < max_retries:
+                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, …
+
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Current observation (tries Valdespartera → falls back to Aeropuerto)
+# In-memory cache (to avoid hammering slow AEMET endpoints)
+# ---------------------------------------------------------------------------
+
+_cache: dict[str, tuple[float, Any]] = {}
+_aemet_last_ok: float = 0.0  # timestamp of the most recent *fresh* AEMET success
+
+
+def _cached_get(endpoint: str, timeout: int = 15,
+                cache_key: str = "",
+                failure_ttl: int = 300) -> list | dict | None:
+    """Cached wrapper around ``_aemet_get``.
+
+    Successful results are cached for ``FORECAST_CACHE_SECONDS`` (15 min).
+    Failed calls (None) are cached for *failure_ttl* seconds (default 5 min)
+    to avoid hammering slow endpoints on every request.
+
+    **On failure, good cached data is never evicted.**  Stale data is returned
+    if available, so a 30-minute AEMET outage doesn't wipe the cache and leave
+    the user with nothing.
+    """
+    key = cache_key or endpoint
+    now = time.time()
+    global _aemet_last_ok
+
+    # Return cached value if still fresh
+    if key in _cache:
+        ts, data = _cache[key]
+        if data is not None:
+            # Success data — return if within TTL
+            if now - ts < FORECAST_CACHE_SECONDS:
+                return data
+        else:
+            # Failure data — respect failure TTL
+            if now - ts < failure_ttl:
+                return None
+
+    # Cache expired or missing — fetch fresh
+    data = _aemet_get(endpoint, timeout=timeout)
+
+    if data is not None:
+        # Fresh success — update cache and timestamp
+        _cache[key] = (now, data)
+        _aemet_last_ok = now
+        return data
+
+    # AEMET failed — never evict existing good data
+    if key in _cache and _cache[key][1] is not None:
+        _, stale = _cache[key]  # return stale but better than nothing
+        return stale
+
+    # Nothing at all in cache either — store the failure marker
+    _cache[key] = (now, None)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Current observation
 # ---------------------------------------------------------------------------
 
 
-def _fetch_current() -> tuple[dict | None, str]:
+def _fetch_current() -> tuple[list | None, str]:
     """Fetch latest observation.
 
     Returns ``(parsed_data, station_name)`` where *station_name* is
@@ -98,7 +237,11 @@ def _fetch_current() -> tuple[dict | None, str]:
         (AEMET_STATION_VALDESPARTERA, "Valdespartera"),
         (AEMET_STATION_AEROPUERTO, "Aeropuerto"),
     ]:
-        data = _aemet_get(f"/observacion/convencional/datos/estacion/{sid}")
+        data = _cached_get(
+            f"/observacion/convencional/datos/estacion/{sid}",
+            cache_key=f"obs_{sid}",
+            failure_ttl=120,  # retry failed obs quickly (2 min)
+        )
         if data and isinstance(data, list) and len(data) > 0:
             return data, sname
     return None, "N/D"
@@ -119,17 +262,27 @@ def _parse_current(data: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Municipio hourly forecast
+# Municipio hourly forecast — PARSE ALL FIELDS
 # ---------------------------------------------------------------------------
 
 
 def _fetch_forecast() -> list | None:
     """Fetch hourly forecast for Zaragoza municipio (7 days)."""
-    return _aemet_get(f"/prediccion/especifica/municipio/horaria/{AEMET_MUNICIPIO_ID}")
+    return _cached_get(
+        f"/prediccion/especifica/municipio/horaria/{AEMET_MUNICIPIO_ID}",
+        cache_key="forecast",
+    )
 
 
 def _parse_forecast(data: list) -> list:
-    """Parse municipio forecast into a list of day dicts."""
+    """Parse municipio forecast into a list of rich day dicts.
+
+    Each day dict now includes:
+      - fecha, weekday
+      - temperatura, sensTermica, estadoCielo, probPrecipitacion, precipitacion
+      - viento (with direccion in degrees), humedad, probTormenta
+      - orto (sunrise), ocaso (sunset)
+    """
     try:
         days = data[0]["prediccion"]["dia"]
     except (KeyError, IndexError, TypeError):
@@ -137,114 +290,505 @@ def _parse_forecast(data: list) -> list:
 
     parsed = []
     for day in days:
-        fecha = day.get("fecha", "")
-        temps = day.get("temperatura", {}).get("dato", [])
-        sky = day.get("estadoCielo", {}).get("dato", [])
-        precip_prob = day.get("probPrecipitacion", {}).get("dato", [])
-        viento = day.get("viento", {}).get("dato", [])
+        fecha_str = day.get("fecha", "")
+        # Compute weekday name
+        try:
+            dt = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+            weekday = WEEKDAY_ES[dt.weekday()]
+        except (ValueError, IndexError):
+            weekday = "?"
 
         parsed.append({
-            "fecha": fecha,
-            "temperatura": temps,
-            "estadoCielo": sky,
-            "probPrecipitacion": precip_prob,
-            "viento": viento,
+            "fecha": fecha_str,
+            "weekday": weekday,
+            "temperatura": day.get("temperatura", {}).get("dato", []),
+            "sensTermica": day.get("sensTermica", {}).get("dato", []),
+            "estadoCielo": day.get("estadoCielo", {}).get("dato", []),
+            "probPrecipitacion": day.get("probPrecipitacion", {}).get("dato", []),
+            "precipitacion": day.get("precipitacion", {}).get("dato", []),
+            "viento": day.get("viento", {}).get("dato", []),
+            "humedad": day.get("humedad", {}).get("dato", []),
+            "probTormenta": day.get("probTormenta", {}).get("dato", []),
+            "orto": day.get("orto", ""),
+            "ocaso": day.get("ocaso", ""),
         })
     return parsed
 
 
 # ---------------------------------------------------------------------------
-# Display formatters
+# UV Index
 # ---------------------------------------------------------------------------
+
+
+def _fetch_uvi() -> dict[str, Any] | None:
+    """Fetch UV Index predictions for today (day=0).
+
+    Uses short timeout — this endpoint is often slow/unavailable.
+    Fails silently so the rest of the report still renders.
+    """
+    data = _cached_get("/prediccion/especifica/uvi/0", timeout=10, cache_key="uvi")
+    if not data or not isinstance(data, list):
+        return None
+    # Find the entry for Zaragoza
+    for entry in data:
+        localidad = entry.get("localidad", entry.get("nombre", "")).strip().lower()
+        if localidad == AEMET_UVI_LOCALIDAD.strip().lower():
+            return entry
+    # Fall back to the first entry if no match (defensive)
+    return data[0] if data else None
+
+
+def _parse_uvi(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Parse UV index response into a clean dict."""
+    if not raw:
+        return None
+    try:
+        uvi = float(raw.get("uvi", raw.get("valor", 0)) or 0)
+    except (ValueError, TypeError):
+        return None
+
+    level = "Desconocido"
+    for threshold, label in UV_LEVELS:
+        if uvi >= threshold:
+            level = label
+
+    return {
+        "uvi": uvi,
+        "level": level,
+        "localidad": raw.get("localidad", raw.get("nombre", "")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Weather warnings (avisos) for Aragón
+# ---------------------------------------------------------------------------
+
+
+def _fetch_warnings() -> dict[str, Any] | None:
+    """Fetch current weather warnings for Aragón via CAP endpoint.
+
+    Uses short timeout — this can be slow.  Fails silently.
+    """
+    return _cached_get(
+        f"/avisos_cap/ultimoelaborado/area/{AEMET_CCAA_ARAGON}",
+        timeout=10,
+        cache_key="warnings",
+    )
+
+
+def _parse_warnings(raw: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Parse CAP warnings into a list of human-readable warning dicts.
+
+    The CAP JSON structure is:
+      alert.info[] = { language, event, urgency, severity, certainty,
+                       headline, description, area[], ... }
+    We only process spanish-language (es) entries.
+    """
+    if not raw or not isinstance(raw, dict):
+        return []
+
+    alerts = []
+    info_list = raw.get("alert", raw).get("info", [])
+
+    # Normalise to list if single
+    if isinstance(info_list, dict):
+        info_list = [info_list]
+
+    for info in info_list:
+        if info.get("language", "").lower() not in ("es", "", "spa"):
+            continue
+
+        severity = info.get("severity", "").lower()  # Minor, Moderate, Severe, Extreme
+        level_icon, level_label = _severity_to_warning(severity)
+
+        alerts.append({
+            "event": info.get("event", "Fenómeno adverso"),
+            "level_icon": level_icon,
+            "level_label": level_label,
+            "onset": info.get("onset", ""),
+            "expires": info.get("expires", ""),
+            "headline": info.get("headline", ""),
+            "description": info.get("description", ""),
+        })
+
+    return alerts
+
+
+def _severity_to_warning(severity: str) -> tuple[str, str]:
+    """Map CAP severity to AEMET-style colour label."""
+    mapping = {
+        "extreme": ("🔴", "Rojo"),
+        "severe": ("🟠", "Naranja"),
+        "moderate": ("🟡", "Amarillo"),
+        "minor": ("🟢", "Verde"),
+        "unknown": ("⚪", "Desconocido"),
+    }
+    return mapping.get(severity, mapping["unknown"])
+
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+
+def _wind_degrees_to_compass(degrees: float) -> str:
+    """Convert wind direction in degrees to 16-point compass bearing.
+
+    Returns something like "NE", "SSW", etc.
+    """
+    if degrees is None or degrees < 0:
+        return "---"
+    # Shift by half a sector (360/32 = 11.25 degrees) so the 16 sectors are centred
+    index = round(degrees / 22.5) % 16
+    return COMPASS_POINTS[index]
+
+
+def _wind_arrow(degrees: float) -> str:
+    """Return a wind direction arrow ←↗︎ etc based on degrees."""
+    if degrees is None or degrees < 0:
+        return "─"
+    # 8 arrows for 8 compass sectors (each 45°)
+    # N=↓ (blows south), NE=↙, E=←, SE=↖, S=↑, SW=↗, W=→, NW=↘
+    arrows = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"]
+    sector = round(degrees / 45) % 8
+    return arrows[sector]
+
+
+def _temp_sparkline(values: list[float], width: int = 8) -> str:
+    """Create a unicode bar sparkline from a list of temperatures.
+
+    Uses 8 block characters: ▁▂▃▄▅▆▇█
+    Returns a string of *width* characters (default 8).
+    """
+    if not values:
+        return ""
+
+    # If we have more values than width, sample evenly
+    if len(values) > width:
+        step = len(values) / width
+        sampled = [values[int(i * step)] for i in range(width)]
+    else:
+        sampled = values
+        # Pad if fewer
+        while len(sampled) < width:
+            sampled.append(sampled[-1] if sampled else 0)
+
+    mn = min(sampled)
+    mx = max(sampled)
+    span = mx - mn
+
+    blocks = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+    chars = []
+    for v in sampled:
+        if span == 0:
+            idx = 3  # middle block if flat
+        else:
+            idx = int((v - mn) / span * (len(blocks) - 1))
+            idx = max(0, min(idx, len(blocks) - 1))
+        chars.append(blocks[idx])
+
+    return "".join(chars)
+
+
+def _get_slot(datos: list, hour: int, key: str = "value", default=None):
+    """Extract a value from AEMETs ``dato`` list-of-dicts structure.
+
+    Usage::
+
+        _get_slot(temps, 14)          → temperature at 14:00
+        _get_slot(vientos, 14, "direccion") → wind direction at 14:00
+    """
+    for d in datos:
+        try:
+            if int(d.get("hora", -1)) == hour:
+                return d.get(key, default)
+        except (ValueError, TypeError):
+            continue
+    return default
+
+
+def _get_slot_str(datos: list, hour: int, key: str = "value") -> str:
+    val = _get_slot(datos, hour, key)
+    return str(val) if val is not None else ""
+
+
+def _max_temp(datos: list) -> float:
+    vals = []
+    for d in datos:
+        try:
+            v = float(d.get("value", 0))
+            vals.append(v)
+        except (ValueError, TypeError):
+            continue
+    return max(vals) if vals else 0.0
+
+
+def _min_temp(datos: list) -> float:
+    vals = []
+    for d in datos:
+        try:
+            v = float(d.get("value", 0))
+            vals.append(v)
+        except (ValueError, TypeError):
+            continue
+    return min(vals) if vals else 0.0
+
+
+def _midday_sky(datos: list) -> str:
+    """Best sky emoji around 14:00."""
+    for d in datos:
+        try:
+            if int(d.get("hora", -1)) == 14:
+                return _sky_emoji(str(d.get("value", "")))
+        except (ValueError, TypeError):
+            continue
+    return _sky_emoji("")
 
 
 def _sky_emoji(code: str) -> str:
     return SKY_CODES.get(code, "🌡")
 
 
-def _hora(temp: float, sky: str, precip: int) -> str:
-    """Single hour line: 14:00  26°C  ⛅  20%"""
-    emoji = _sky_emoji(sky)
-    return f"{temp:>3.0f}°C  {emoji}  {precip}%"
+def _sky_short(code: str) -> str:
+    return SKY_SHORT.get(code, "🌡")
+
+
+def _weekday_name(fecha_str: str) -> str:
+    """Convert '2025-05-31' -> 'sáb'."""
+    try:
+        dt = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        return WEEKDAY_ES[dt.weekday()]
+    except (ValueError, IndexError):
+        return "?"
+
+
+def _uv_label(uvi: float) -> str:
+    """Return human-friendly UV level string (highest matching threshold)."""
+    label = "Desconocido"
+    for threshold, l in reversed(UV_LEVELS):
+        if uvi >= threshold:
+            return l
+    return label
+
+
+def _format_time(iso_str: str) -> str:
+    """Extract HH:MM from ISO datetime string or return as-is."""
+    if not iso_str:
+        return "--:--"
+    # Try parsing ISO format
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S%z"):
+        try:
+            dt = datetime.strptime(iso_str, fmt)
+            return dt.strftime("%H:%M")
+        except ValueError:
+            continue
+    # Maybe it's just HH:MM already
+    if len(iso_str) >= 5 and ":" in iso_str[:5]:
+        return iso_str[:5]
+    return iso_str
+
+
+def _format_date_short(iso_str: str) -> str:
+    """Convert '2025-05-31T14:00:00' -> '31/05'."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S%z",
+                "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(iso_str, fmt)
+            return dt.strftime("%d/%m")
+        except ValueError:
+            continue
+    return iso_str[:10] if len(iso_str) >= 10 else iso_str
+
+
+def _cache_age_line() -> str:
+    """Return a short note line if the data is from an earlier fetch.
+
+    Returns something like ``"📡 data from 08:32 (cached)"`` or ``""``
+    when the data is fresh (fetched within the last 120 seconds).
+    """
+    elapsed = time.time() - _aemet_last_ok
+    if elapsed > 120 and _aemet_last_ok > 0:
+        cache_time = datetime.fromtimestamp(_aemet_last_ok).strftime("%H:%M")
+        return f"📡 data from {cache_time} (cached)"
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Morning report (Markdown-friendly, pushed at 09:00)
+# ---------------------------------------------------------------------------
 
 
 def format_morning_report() -> str | None:
-    """Morning weather brief (push at 09:00)."""
+    """Morning weather brief — designed for Telegram Markdown."""
     current, station = _fetch_current()
     forecast_data = _fetch_forecast()
     days = _parse_forecast(forecast_data) if forecast_data else []
+    uvi_data = _parse_uvi(_fetch_uvi())
+    warnings = _parse_warnings(_fetch_warnings())
 
     if not current and not days:
         return None
 
     lines = []
-    lines.append("☀️ Buenos días — Zaragoza Forecast")
-    lines.append("━" * 35)
+    now = datetime.now()
 
-    # Source header
+    # ── Header ────────────────────────────────────────────────────────────
+    lines.append("☀️ *Buenos días — Zaragoza*")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
     if station:
         lines.append(f"📍 {station} · AEMET")
+    cache_note = _cache_age_line()
+    if cache_note:
+        lines.append(cache_note)
     lines.append("")
 
-    # Current conditions
+    # ── Current conditions ────────────────────────────────────────────────
     if current:
         cur = _parse_current(current)
-        now = datetime.now().strftime("%H:%M")
-        lines.append(f"🌡 Now ({now}): {cur['temp']:.1f}°C  ·  feels like —")
-        lines.append(f"💧 {cur['humidity']:.0f}%  ·  💨 {cur['wind_speed']:.1f} km/h")
+        time_str = now.strftime("%H:%M")
+        lines.append(f"🌡 *Ahora* ({time_str}): {cur['temp']:.1f}°C")
+        lines.append(
+            f"💧 {cur['humidity']:.0f}%  ·  "
+            f"💨 {cur['wind_speed']:.1f} km/h"
+        )
         lines.append("")
 
-    # Today's forecast (first day in the list = today if available)
+    # ── Today's forecast ──────────────────────────────────────────────────
     if days:
         today = days[0]
         fecha = today.get("fecha", "")
+        weekday = today.get("weekday", "")
         temps = today.get("temperatura", [])
+        feels = today.get("sensTermica", [])
         sky = today.get("estadoCielo", [])
         precip = today.get("probPrecipitacion", [])
+        viento = today.get("viento", [])
+        orto = today.get("orto", "")
+        ocaso = today.get("ocaso", "")
 
-        lines.append(f"📅 {fecha}")
-        # Show morning / afternoon / evening highlights
-        slots = {"Morning": 9, "Afternoon": 14, "Evening": 20}
+        t_min = _min_temp(temps)
+        t_max = _max_temp(temps)
+
+        # Day header with sunrise/sunset
+        header = f"📅 *{_format_date_short(fecha)} ({weekday})*"
+        if orto and ocaso:
+            header += f"     🌅{orto} 🌇{ocaso}"
+        lines.append(header)
+
+        # Morning / afternoon / evening slots
+        slots = {"Mañana": 9, "Tarde": 14, "Noche": 20}
         for label, h in slots.items():
             t = _get_slot(temps, h)
+            f = _get_slot(feels, h)
             s = _get_slot_str(sky, h, "value")
             p = int(_get_slot(precip, h, "value", 0))
+            v = _get_slot(viento, h, "direccion", 0)
             if t is not None:
-                lines.append(f"  {label:<11}  {_hora(t, s, p)}")
+                try:
+                    compass = _wind_degrees_to_compass(float(v))
+                except (ValueError, TypeError):
+                    compass = ""
+                feels_str = f" (sens {float(f):.0f}°C)" if f else ""
+                sky_short = _sky_short(s)
+                lines.append(
+                    f"  {label:<7} {h:02d}h  "
+                    f"{float(t):.0f}°C{feels_str}  "
+                    f"{sky_short}  {p}%  {compass}"
+                )
+
+        # Min/max + sparkline
+        temp_values = []
+        for d in temps:
+            try:
+                temp_values.append(float(d.get("value", 0)))
+            except (ValueError, TypeError):
+                continue
+        spark = _temp_sparkline(temp_values, width=8)
+        lines.append(
+            f"  🌡 {t_min:.0f}–{t_max:.0f}°C  "
+            f"{spark}"
+        )
         lines.append("")
 
-        # Next 3 days summary
-        if len(days) > 1:
-            lines.append("🔮 Próximos días")
-            for day in days[1:4]:
-                t_min = _min_temp(day.get("temperatura", []))
-                t_max = _max_temp(day.get("temperatura", []))
-                s = _midday_sky(day.get("estadoCielo", []))
-                fecha_short = day.get("fecha", "")[5:]  # MM-DD
-                lines.append(f"  {fecha_short}  {t_min:.0f}–{t_max:.0f}°C  {s}")
+        # ── UV Index ──────────────────────────────────────────────────────
+        if uvi_data:
+            uvi_val = uvi_data["uvi"]
+            uvi_lvl = uvi_data["level"]
+            bar = _temp_sparkline([uvi_val], width=1)
+            lines.append(f"🔆 *UV*: {uvi_val:.0f} ({uvi_lvl})")
+            lines.append("")
 
-    lines.append("━" * 35)
+        # ── Warnings ──────────────────────────────────────────────────────
+        if warnings:
+            lines.append("⚠️ *Avisos activos*")
+            for w in warnings[:3]:  # max 3 in the brief
+                icon = w["level_icon"]
+                event = w["event"]
+                level = w["level_label"]
+                onset = _format_time(w["onset"]) if w.get("onset") else ""
+                expires = _format_time(w["expires"]) if w.get("expires") else ""
+                time_range = f" {onset}–{expires}" if onset and expires else ""
+                lines.append(f"  {icon} {event} · {level}{time_range}")
+            if len(warnings) > 3:
+                lines.append(f"  … y {len(warnings) - 3} más")
+            lines.append("")
+
+        # ── Next 3 days ───────────────────────────────────────────────────
+        if len(days) > 1:
+            lines.append("🔮 *Próximos días*")
+            for day in days[1:4]:
+                t_min_d = _min_temp(day.get("temperatura", []))
+                t_max_d = _max_temp(day.get("temperatura", []))
+                s = _midday_sky(day.get("estadoCielo", []))
+                fecha_short = _format_date_short(day.get("fecha", ""))
+                wd = day.get("weekday", "")
+                lines.append(
+                    f"  {fecha_short} {wd:<4} {t_min_d:.0f}–{t_max_d:.0f}°C  {s}"
+                )
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# On-demand display (code-block-table style)
+# ---------------------------------------------------------------------------
+
+
 def format_ondemand() -> str | None:
-    """On-demand weather display (fuller than the morning brief)."""
+    """Full detailed weather display — for the on-demand button.
+
+    Returns a plain-text / code-block-friendly string with no Markdown
+    formatting (bot.py wraps it in ``` ```).
+    """
     current, station = _fetch_current()
     forecast_data = _fetch_forecast()
     days = _parse_forecast(forecast_data) if forecast_data else []
+    uvi_data = _parse_uvi(_fetch_uvi())
+    warnings = _parse_warnings(_fetch_warnings())
 
     if not current and not days:
         return None
 
     lines = []
-    lines.append(f"🌤  Zaragoza Weather — AEMET")
-    lines.append("━" * 45)
+    now = datetime.now()
+
+    # ── Header ────────────────────────────────────────────────────────────
+    lines.append("🌤  Zaragoza Weather — AEMET")
+    lines.append("━" * 46)
 
     if station:
         lines.append(f"📍 Estación: {station}")
+    cache_note = _cache_age_line()
+    if cache_note:
+        lines.append(cache_note)
     lines.append("")
 
-    # Current
+    # ── Current Conditions ────────────────────────────────────────────────
     if current:
         cur = _parse_current(current)
         lines.append("🔴 CURRENT CONDITIONS")
@@ -256,72 +800,128 @@ def format_ondemand() -> str | None:
             lines.append(f"  🌧 Precipitation: {cur['precip']:.1f} mm")
         lines.append("")
 
-    # Hourly forecast
+    # ── UV Index ──────────────────────────────────────────────────────────
+    if uvi_data:
+        uvi_val = uvi_data["uvi"]
+        uvi_lvl = uvi_data["level"]
+        lines.append(f"🔆 UV Index: {uvi_val:.0f} ({uvi_lvl})")
+        lines.append("")
+
+    # ── Warnings ──────────────────────────────────────────────────────────
+    if warnings:
+        lines.append("⚠️  AVISOS ACTIVOS")
+        for w in warnings:
+            icon = w["level_icon"]
+            event = w["event"]
+            level = w["level_label"]
+            lines.append(f"  {icon} {event} · Nivel {level}")
+            if w.get("headline"):
+                lines.append(f"     {w['headline']}")
+            onset = _format_time(w["onset"]) if w.get("onset") else ""
+            expires = _format_time(w["expires"]) if w.get("expires") else ""
+            if onset or expires:
+                lines.append(f"     {onset} → {expires}" if onset and expires
+                             else f"     {onset or expires}")
+            if w.get("description"):
+                # Truncate long descriptions
+                desc = w["description"].strip()
+                lines.append(f"     {desc[:120]}{'…' if len(desc) > 120 else ''}")
+        lines.append("")
+
+    # ── Hourly Forecast ───────────────────────────────────────────────────
     if days:
         today = days[0]
-        lines.append(f"📅 TODAY · {today.get('fecha', '')}")
-        lines.append(f"  {'Hora':<8} {'Temp':<8} {'Cielo':<20} {'Lluvia':<8}")
-        lines.append(f"  {'─' * 44}")
+        fecha = today.get("fecha", "")
+        weekday = today.get("weekday", "")
         temps = today.get("temperatura", [])
+        feels = today.get("sensTermica", [])
         sky = today.get("estadoCielo", [])
         precip = today.get("probPrecipitacion", [])
+        viento = today.get("viento", [])
+        orto = today.get("orto", "")
+        ocaso = today.get("ocaso", "")
+
+        t_min = _min_temp(temps)
+        t_max = _max_temp(temps)
+
+        # Day header
+        day_label = f"📅 TODAY · {fecha} ({weekday})"
+        if orto and ocaso:
+            day_label += f"  🌅{orto} 🌇{ocaso}"
+        lines.append(day_label)
+
+        # Table header
+        lines.append(f"  {'Hora':<6} {'Temp':<6} {'Sens':<6} "
+                      f"{'Cielo':<20} {'Lluvia':<7} {'Viento':<8}")
+        lines.append(f"  {'─' * 53}")
+
+        # Row for each hourly entry
         for entry in temps:
-            h = entry.get("hora", 0)
-            t = entry.get("value", "")
-            s = _get_slot_str(sky, h, "value")
-            p = int(_get_slot(precip, h, "value", 0))
-            emoji = _sky_emoji(s)
-            lines.append(f"  {h:02d}:00    {t:>4}°C   {emoji:<18} {p:>3}%")
+            try:
+                h = int(entry.get("hora", 0))
+            except (ValueError, TypeError):
+                h = 0
+            t_val = entry.get("value", "")
+            try:
+                t_str = f"{float(t_val):.0f}°C"
+            except (ValueError, TypeError):
+                t_str = f"{t_val}°C"
+
+            # Feels-like
+            f_val = _get_slot(feels, h, "value")
+            try:
+                f_str = f"{float(f_val):.0f}°C" if f_val else " --"
+            except (ValueError, TypeError):
+                f_str = " --"
+
+            # Sky
+            s_code = _get_slot_str(sky, h, "value")
+            s_emoji = _sky_emoji(s_code)
+            s_short_emoji = _sky_short(s_code)
+
+            # Precipitation
+            p_val = _get_slot(precip, h, "value", 0)
+            try:
+                p_str = f"{int(float(p_val))}%"
+            except (ValueError, TypeError):
+                p_str = " 0%"
+
+            # Wind
+            v_dir = _get_slot(viento, h, "direccion", 0)
+            v_speed = _get_slot(viento, h, "velocidad", 0)
+            try:
+                compass = _wind_degrees_to_compass(float(v_dir))
+                arrow = _wind_arrow(float(v_dir))
+                v_str = f"{arrow}{compass} {float(v_speed):.0f}"
+            except (ValueError, TypeError):
+                v_str = "---"
+
+            lines.append(
+                f"  {h:02d}:00  {t_str:<5} {f_str:<5} "
+                f"{s_emoji:<19} {p_str:<6} {v_str:<8}"
+            )
 
         lines.append("")
 
-        # Multi-day
+        # ── Multi-day forecast ────────────────────────────────────────────
         if len(days) > 1:
             lines.append("📅 NEXT DAYS")
             for day in days[1:7]:
-                t_min = _min_temp(day.get("temperatura", []))
-                t_max = _max_temp(day.get("temperatura", []))
+                t_min_d = _min_temp(day.get("temperatura", []))
+                t_max_d = _max_temp(day.get("temperatura", []))
                 s = _midday_sky(day.get("estadoCielo", []))
                 fecha_label = day.get("fecha", "")
-                lines.append(f"  {fecha_label}  {t_min:.0f}–{t_max:.0f}°C  {s}")
+                wd = day.get("weekday", "")
+                orto_d = day.get("orto", "")
+                ocaso_d = day.get("ocaso", "")
+                sun_str = f" 🌅{orto_d} 🌇{ocaso_d}" if orto_d and ocaso_d else ""
+                lines.append(
+                    f"  {fecha_label} ({wd}){sun_str}  "
+                    f"{t_min_d:.0f}–{t_max_d:.0f}°C  {s}"
+                )
 
-    lines.append("━" * 45)
+    lines.append("━" * 46)
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Helper: extract values from AEMET's "dato" list-of-dicts structure
-# ---------------------------------------------------------------------------
-
-
-def _get_slot(datos: list, hour: int, key: str = "value", default=None):
-    for d in datos:
-        if int(d.get("hora", -1)) == hour:
-            return d.get(key, default)
-    return default
-
-
-def _get_slot_str(datos: list, hour: int, key: str = "value") -> str:
-    val = _get_slot(datos, hour, key)
-    return str(val) if val is not None else ""
-
-
-def _max_temp(datos: list) -> float:
-    vals = [float(d.get("value", 0)) for d in datos if d.get("value")]
-    return max(vals) if vals else 0.0
-
-
-def _min_temp(datos: list) -> float:
-    vals = [float(d.get("value", 0)) for d in datos if d.get("value")]
-    return min(vals) if vals else 0.0
-
-
-def _midday_sky(datos: list) -> str:
-    """Best sky emoji around 14:00."""
-    for d in datos:
-        if int(d.get("hora", -1)) == 14:
-            return _sky_emoji(str(d.get("value", "")))
-    return _sky_emoji("")
 
 
 # ---------------------------------------------------------------------------

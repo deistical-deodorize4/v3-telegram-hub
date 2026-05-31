@@ -2,10 +2,5 @@ python-telegram-bot>=21
 google-genai
 python-docx
 requests
-numpy
-pandas
-scikit-learn
-joblib
-ai-edge-litert
 psutil
 python-dotenv
