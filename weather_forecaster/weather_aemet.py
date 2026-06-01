@@ -587,11 +587,11 @@ def _midday_sky(datos: list) -> str:
 
 
 def _sky_emoji(code: str) -> str:
-    return SKY_CODES.get(code, "🌡")
+    return SKY_CODES.get(code, "")
 
 
 def _sky_short(code: str) -> str:
-    return SKY_SHORT.get(code, "🌡")
+    return SKY_SHORT.get(code, "")
 
 
 def _weekday_name(fecha_str: str) -> str:
@@ -701,7 +701,6 @@ def format_morning_report() -> str | None:
         fecha = today.get("fecha", "")
         weekday = today.get("weekday", "")
         temps = today.get("temperatura", [])
-        feels = today.get("sensTermica", [])
         sky = today.get("estadoCielo", [])
         precip = today.get("probPrecipitacion", [])
         viento = today.get("viento", [])
@@ -721,7 +720,6 @@ def format_morning_report() -> str | None:
         slots = {"Mañana": 9, "Tarde": 14, "Noche": 20}
         for label, h in slots.items():
             t = _get_slot(temps, h)
-            f = _get_slot(feels, h)
             s = _get_slot_str(sky, h, "value")
             p = int(_get_slot(precip, h, "value", 0))
             v = _get_slot(viento, h, "direccion", 0)
@@ -730,10 +728,9 @@ def format_morning_report() -> str | None:
                     compass = _wind_degrees_to_compass(float(v))
                 except (ValueError, TypeError):
                     compass = ""
-                feels_str = f" · s {float(f):.0f}°C" if f else ""
                 sky_short = _sky_short(s)
                 lines.append(
-                    f"  ▸ {h:02d}h  {float(t):.0f}°C{feels_str} · {sky_short} · 💧{p}% {compass}"
+                    f"  ▸ {h:02d}h  {float(t):.0f}°C · {sky_short} · 💧{p}% {compass}"
                 )
 
         # Min/max + sparkline
@@ -849,9 +846,9 @@ def format_ondemand() -> str | None:
         fecha = today.get("fecha", "")
         weekday = today.get("weekday", "")
         temps = today.get("temperatura", [])
-        feels = today.get("sensTermica", [])
         sky = today.get("estadoCielo", [])
         precip = today.get("probPrecipitacion", [])
+        humedad = today.get("humedad", [])
         viento = today.get("viento", [])
         orto = today.get("orto", "")
         ocaso = today.get("ocaso", "")
@@ -878,16 +875,8 @@ def format_ondemand() -> str | None:
             except (ValueError, TypeError):
                 t_str = f"{t_val}°C"
 
-            # Feels-like (only when meaningful)
-            f_val = _get_slot(feels, h, "value")
-            try:
-                feels_str = f"(s {float(f_val):.0f}°)" if f_val else ""
-            except (ValueError, TypeError):
-                feels_str = ""
-
-            # Sky
+            # Sky (emoji only, no text)
             s_code = _get_slot_str(sky, h, "value")
-            s_emoji = _sky_emoji(s_code)
             s_short = _sky_short(s_code)
 
             # Precipitation
@@ -897,21 +886,35 @@ def format_ondemand() -> str | None:
             except (ValueError, TypeError):
                 p_str = "💧0%"
 
-            # Wind
-            v_dir = _get_slot(viento, h, "direccion", 0)
-            v_speed = _get_slot(viento, h, "velocidad", 0)
+            # Humidity
+            h_val = _get_slot(humedad, h, "value", None)
             try:
-                compass = _wind_degrees_to_compass(float(v_dir))
-                v_str = f"🌬 {compass} {float(v_speed):.0f}"
+                h_str = f"💦{int(float(h_val))}%" if h_val is not None else ""
             except (ValueError, TypeError):
-                v_str = "🌬 ---"
+                h_str = ""
 
+            # Wind — only show if speed > 0
+            v_dir = _get_slot(viento, h, "direccion", None)
+            v_speed = _get_slot(viento, h, "velocidad", None)
+            try:
+                speed = float(v_speed) if v_speed is not None else 0
+                if speed > 0:
+                    compass = _wind_degrees_to_compass(v_dir or 0)
+                    v_str = f"🌬{compass} {speed:.0f}"
+                else:
+                    v_str = ""
+            except (ValueError, TypeError):
+                v_str = ""
+
+            # Build parts, skipping empty
             parts = [f"{h:02d}h {t_str}"]
-            if feels_str:
-                parts.append(feels_str)
-            parts.append(s_emoji)
+            if s_short:
+                parts.append(s_short)
             parts.append(p_str)
-            parts.append(v_str)
+            if h_str:
+                parts.append(h_str)
+            if v_str:
+                parts.append(v_str)
             lines.append("  " + " · ".join(parts))
 
         # Min/max + sparkline
