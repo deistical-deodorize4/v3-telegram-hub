@@ -178,10 +178,10 @@ def snapshot() -> SystemSnapshot:
     )
 
 
-def _bar(value: float, width: int = 20) -> str:
+def _bar(value: float, width: int = 5) -> str:
     value = max(0.0, min(value, 100.0))
     filled = int((value / 100) * width)
-    return "#" * filled + "-" * (width - filled)
+    return "█" * filled + "░" * (width - filled)
 
 
 def render(data: SystemSnapshot) -> str:
