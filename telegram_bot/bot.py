@@ -611,12 +611,19 @@ async def price_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def price_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Finish URL entry and show preview."""
+    """Finish URL entry and show preview (or finish editing)."""
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
         return
     session = _get_session(user_id)
     form = session.get("form", {})
+
+    # Handle price_edit mode: finish editing
+    if session["mode"] == "price_edit":
+        session["mode"] = "menu"
+        session["form"] = {}
+        await update.message.reply_text("✅ Done editing.", reply_markup=MENU_KEYBOARD)
+        return
 
     if session["mode"] != "price_add" or form.get("waiting_for") != "url":
         await update.message.reply_text("Nothing to finish.")
@@ -704,6 +711,235 @@ async def price_test_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
+async def price_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the edit-product flow."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    items = pw.load_config()
+    if not items:
+        await update.message.reply_text("No products in watchlist.")
+        return
+
+    lines = ["✏️ *Edit product*", "───", ""]
+    for i, item in enumerate(items, 1):
+        lines.append(f"{i}. *{item.name}* (`{item.id}`)")
+    lines.append("")
+    lines.append("Send the number to edit or /pricecancel.")
+
+    session["mode"] = "price_edit"
+    session["form"] = {"step": "pick_item", "items": [i.to_dict() for i in items], "item_idx": None}
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def price_handle_edit_message(update: Update, text: str) -> None:
+    """Handle messages during the price_edit flow."""
+    user_id = update.effective_user.id
+    session = _get_session(user_id)
+    form = session.get("form", {})
+    step = form.get("step", "pick_item")
+
+    items = form.get("items", [])
+    item_idx = form.get("item_idx")
+
+    # ── Step: pick_item ────────────────────────────────────────────────
+    if step == "pick_item":
+        try:
+            idx = int(text.strip()) - 1
+            if idx < 0 or idx >= len(items):
+                raise ValueError
+        except (ValueError, IndexError):
+            await update.message.reply_text(f"Send a number 1–{len(items)}.")
+            return
+
+        item = items[idx]
+        form["item_idx"] = idx
+
+        lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+        for i, u in enumerate(item.get("urls", []), 1):
+            lines.append(f"{i}. {u['site']}: {u['url']}")
+        lines.append("")
+        lines.append("Send:")
+        lines.append("  A         — add a URL")
+        lines.append("  R <num>   — remove URL (e.g. R 2)")
+        lines.append("  D or done — finish editing")
+        lines.append("  /pricecancel — cancel")
+
+        form["step"] = "action"
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        return
+
+    # ── Step: action ───────────────────────────────────────────────────
+    if step == "action":
+        cmd = text.strip().lower()
+
+        if cmd in ("a", "add"):
+            form["step"] = "url"
+            form["pending_url"] = {}
+            await update.message.reply_text(
+                "🔗 Send a link to add. I'll detect the site and test it.\n"
+                "Send /pricecancel to cancel.",
+            )
+            return
+
+        if cmd.startswith("r ") or cmd.startswith("remove "):
+            try:
+                url_idx = int(cmd.split()[-1]) - 1
+                urls = items[item_idx].get("urls", [])
+                if url_idx < 0 or url_idx >= len(urls):
+                    raise ValueError
+            except (ValueError, IndexError):
+                await update.message.reply_text(
+                    f"Send a valid number, e.g. R 2. "
+                    f"Product has {len(items[item_idx].get('urls', []))} URLs."
+                )
+                return
+
+            form["remove_url_idx"] = url_idx
+            target = urls[url_idx]
+            await update.message.reply_text(
+                f"Remove this URL?\n"
+                f"  {target['site']}: {target['url']}\n\n"
+                "Confirm? (y/n)",
+            )
+            form["step"] = "remove_confirm"
+            return
+
+        if cmd in ("d", "done"):
+            session["mode"] = "menu"
+            session["form"] = {}
+            await update.message.reply_text("✅ Done.", reply_markup=MENU_KEYBOARD)
+            return
+
+        await update.message.reply_text("Send A, R <num>, or D.")
+        return
+
+    # ── Step: url (same flow as add) ───────────────────────────────────
+    if step == "url":
+        detected = _detect_site_from_url(text)
+        if not detected:
+            await update.message.reply_text(
+                "❌ Can't detect site from that URL.\n"
+                "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com / .de / .co.uk\n"
+                "Try again or /pricecancel."
+            )
+            return
+
+        site_key, currency = detected
+        status_msg = await update.message.reply_text("⏳ Testing link…")
+        try:
+            from price_watcher.scrapers import scrape
+            item_name = items[item_idx]["name"]
+            price, currency_got, site_name, product_name, matched = scrape(
+                site_key, text, [item_name], timeout=20,
+            )
+            display_currency = currency_got or currency
+        except Exception as exc:
+            await status_msg.edit_text(
+                f"❌ Error scraping: {exc}\nSend another URL or /pricecancel."
+            )
+            return
+
+        name_status = "✅ matches" if matched else "⚠️ *does NOT match*"
+        await status_msg.edit_text(
+            f"🔗 *{site_name}*\n"
+            f"Price: *{price:.2f} {display_currency}*\n"
+            f"Name: {name_status}\n\n"
+            "Save this link? (y/n)",
+            parse_mode="Markdown",
+        )
+        form["pending_url"] = {
+            "site": site_key,
+            "site_name": site_name,
+            "url": text,
+            "currency": display_currency,
+        }
+        form["step"] = "url_confirm"
+        return
+
+    # ── Step: url_confirm ──────────────────────────────────────────────
+    if step == "url_confirm":
+        if text.lower() in ("y", "yes"):
+            pending = form.pop("pending_url", None)
+            if pending:
+                items[item_idx].setdefault("urls", []).append({
+                    "site": pending["site"],
+                    "url": pending["url"],
+                    "currency": pending["currency"],
+                })
+                _save_items(items)
+                await update.message.reply_text("✅ URL added! Saving…")
+
+                # Show updated product view
+                item = items[item_idx]
+                lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+                for i, u in enumerate(item.get("urls", []), 1):
+                    lines.append(f"{i}. {u['site']}: {u['url']}")
+                lines.append("")
+                lines.append("Send:")
+                lines.append("  A         — add another URL")
+                lines.append("  R <num>   — remove a URL (e.g. R 2)")
+                lines.append("  D or done — finish editing")
+                lines.append("  /pricecancel — cancel")
+                form["step"] = "action"
+                await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+                return
+        else:
+            form.pop("pending_url", None)
+            await update.message.reply_text("Discarded. Send A to add another URL, or D to finish.")
+            form["step"] = "action"
+        return
+
+    # ── Step: remove_confirm ───────────────────────────────────────────
+    if step == "remove_confirm":
+        if text.lower() in ("y", "yes"):
+            url_idx = form.get("remove_url_idx")
+            removed = items[item_idx]["urls"].pop(url_idx)
+            _save_items(items)
+            await update.message.reply_text(f"✅ Removed {removed['site']} link.")
+
+            # Show updated product view
+            item = items[item_idx]
+            if not item["urls"]:
+                # All URLs removed — remove the product itself
+                items.pop(item_idx)
+                _save_items(items)
+                session["mode"] = "menu"
+                session["form"] = {}
+                await update.message.reply_text(
+                    "ℹ️ Product had no URLs left — removed entirely.",
+                    reply_markup=MENU_KEYBOARD,
+                )
+                return
+
+            lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+            for i, u in enumerate(item.get("urls", []), 1):
+                lines.append(f"{i}. {u['site']}: {u['url']}")
+            lines.append("")
+            lines.append("Send:")
+            lines.append("  A         — add a URL")
+            lines.append("  R <num>   — remove a URL (e.g. R 2)")
+            lines.append("  D or done — finish editing")
+            lines.append("  /pricecancel — cancel")
+            form["step"] = "action"
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        else:
+            await update.message.reply_text("Not removed. Send A, R <num>, or D.")
+            form["step"] = "action"
+        return
+
+
+def _save_items(items: list[dict]) -> None:
+    """Write the full watchlist to disk."""
+    import json
+    from price_watcher.price_watcher import CONFIG_FILE
+    CONFIG_FILE.write_text(
+        json.dumps({"items": items}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _save_product(form: dict) -> None:
     """Append a new product to watchlist.json."""
     import json
@@ -741,10 +977,7 @@ def _save_product(form: dict) -> None:
         items = []
 
     items.append(entry)
-    CONFIG_FILE.write_text(
-        json.dumps({"items": items}, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    _save_items(items)
 
 
 async def price_handle_add_message(update: Update, text: str) -> bool:
@@ -973,6 +1206,10 @@ async def price_handle_message(update: Update, text: str) -> None:
         session["mode"] = "price_menu"
         return
 
+    if mode == "price_edit":
+        await price_handle_edit_message(update, text)
+        return
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
@@ -1178,16 +1415,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         msg = (
             f"{report}\n"
             "───\n\n"
-            "➕ /priceadd    Add product\n"
-            "❌ /priceremove Remove product\n"
-            "🔍 /pricetest   Test a URL\n"
-            "📊 /pricereport View report"
+            "➕ /priceadd     Add product\n"
+            "✏️ /priceedit    Edit product\n"
+            "❌ /priceremove  Remove product\n"
+            "🔍 /pricetest    Test a URL\n"
+            "📊 /pricereport  View report"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
         return
 
     # ------- Price Watch interactive flows -------
-    if session["mode"] in ("price_add", "price_remove", "price_test"):
+    if session["mode"] in ("price_add", "price_remove", "price_test", "price_edit"):
         await price_handle_message(update, text)
         return
 
@@ -1226,6 +1464,7 @@ def main() -> None:
     app.add_handler(CommandHandler("pricecancel", price_cancel))
     app.add_handler(CommandHandler("priceremove", price_remove_start))
     app.add_handler(CommandHandler("pricetest", price_test_start))
+    app.add_handler(CommandHandler("priceedit", price_edit_start))
     app.add_handler(CommandHandler("pricereport", price_report))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

@@ -40,6 +40,9 @@ class WatchUrl:
     def from_dict(cls, d: dict) -> WatchUrl:
         return cls(url=d["url"], site=d["site"], currency=d["currency"].upper())
 
+    def to_dict(self) -> dict:
+        return {"url": self.url, "site": self.site, "currency": self.currency}
+
 
 @dataclass
 class WatchItem:
@@ -56,6 +59,14 @@ class WatchItem:
             name_keywords=d.get("name_keywords", [d["name"]]),
             urls=[WatchUrl.from_dict(u) for u in d.get("urls", [])],
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "name_keywords": list(self.name_keywords),
+            "urls": [u.to_dict() for u in self.urls],
+        }
 
 
 @dataclass
@@ -226,7 +237,22 @@ def format_ondemand(results: list[dict] | None = None) -> str:
     if not results:
         return "💰 *Price Watch*\n\nNo items in watchlist."
 
+    # Count changes vs stable
+    changes_count = 0
+    for r in results:
+        if r["error"] or r["price"] is None:
+            continue
+        prev = r.get("previous_price")
+        if prev is not None and abs(r["price"] - prev) > 0.01:
+            changes_count += 1
+
     lines = ["💰 *Price Watch*", "───", ""]
+    if changes_count:
+        lines.append(f"🔔 {changes_count} change{'s' if changes_count != 1 else ''}")
+        lines.append("")
+    else:
+        lines.append("📊 All prices stable")
+        lines.append("")
     by_item: dict[str, list[dict]] = {}
     for r in results:
         by_item.setdefault(r["item_name"], []).append(r)
