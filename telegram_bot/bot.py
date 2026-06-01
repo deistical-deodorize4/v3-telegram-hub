@@ -602,7 +602,7 @@ async def price_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         await update.message.reply_text(
             "📦 *Product name?*\n\n"
-            "Send /price_cancel anytime to cancel.",
+            "Send /pricecancel anytime to cancel.",
             parse_mode="Markdown",
         )
         log.warning("price_add_start reply sent OK")
@@ -664,7 +664,7 @@ async def price_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for i, item in enumerate(items, 1):
         lines.append(f"{i}. {item.name} (`{item.id}`)")
     lines.append("")
-    lines.append("Send the number to remove or /price_cancel.")
+    lines.append("Send the number to remove or /pricecancel.")
 
     session["mode"] = "price_remove"
     session["form"] = {"items": items}
@@ -700,7 +700,7 @@ async def price_test_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     session["mode"] = "price_test"
     session["form"] = {}
     await update.message.reply_text(
-        "🔍 Send a URL to test, or /price_cancel.",
+        "🔍 Send a URL to test, or /pricecancel.",
     )
 
 
@@ -764,7 +764,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         await update.message.reply_text(
             f"📦 *{form['name']}*\n\n"
             "🔗 Send a link. I'll detect the site and test it.\n"
-            "Send /price_done when finished or /price_cancel to cancel.",
+            "Send /pricedone when finished or /pricecancel to cancel.",
             parse_mode="Markdown",
         )
         return True
@@ -776,7 +776,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
             await update.message.reply_text(
                 "❌ Can't detect site from that URL.\n"
                 "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com / .de / .co.uk\n"
-                "Try again or /price_done."
+                "Try again or /pricedone."
             )
             return True
 
@@ -794,7 +794,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         except Exception as exc:
             await status_msg.edit_text(
                 f"❌ Error scraping: {exc}\n"
-                "Send another URL or /price_done."
+                "Send another URL or /pricedone."
             )
             return True
 
@@ -824,11 +824,11 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
             if pending:
                 form["urls"].append(pending)
                 await update.message.reply_text(
-                    f"✅ Saved. Send another URL or /price_done."
+                    f"✅ Saved. Send another URL or /pricedone."
                 )
         else:
             form.pop("pending_url", None)
-            await update.message.reply_text("Discarded. Send another URL or /price_done.")
+            await update.message.reply_text("Discarded. Send another URL or /pricedone.")
         form["waiting_for"] = "url"
         return True
 
@@ -839,7 +839,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
             session["mode"] = "menu"
             session["form"] = {}
             await update.message.reply_text(
-                "✅ Product added! Run /price_report to check it.",
+                "✅ Product added! Run /pricereport to check it.",
                 reply_markup=MENU_KEYBOARD,
             )
         else:
@@ -890,7 +890,7 @@ async def price_handle_message(update: Update, text: str) -> None:
     if mode == "price_add":
         handled = await price_handle_add_message(update, text)
         if not handled:
-            await update.message.reply_text("Hmm? Send a URL, /price_done, or /price_cancel.")
+            await update.message.reply_text("Hmm? Send a URL, /pricedone, or /pricecancel.")
         return
 
     if mode == "price_remove":
@@ -927,7 +927,7 @@ async def price_handle_message(update: Update, text: str) -> None:
         # Otherwise it's a number pick
         handled = await price_handle_remove_message(update, text)
         if not handled:
-            await update.message.reply_text("Send a number or /price_cancel.")
+            await update.message.reply_text("Send a number or /pricecancel.")
         return
 
     if mode == "price_test":
@@ -1164,10 +1164,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         msg = (
             f"{report}\n"
             "───\n\n"
-            "➕ /price_add    Add product\n"
-            "❌ /price_remove Remove product\n"
-            "🔍 /price_test   Test a URL\n"
-            "📊 /price_report View report"
+            "➕ /priceadd    Add product\n"
+            "❌ /priceremove Remove product\n"
+            "🔍 /pricetest   Test a URL\n"
+            "📊 /pricereport View report"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
         return
@@ -1207,12 +1207,12 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("monitor", handle_message))
-    app.add_handler(CommandHandler("price_add", price_add_start))
-    app.add_handler(CommandHandler("price_done", price_done))
-    app.add_handler(CommandHandler("price_cancel", price_cancel))
-    app.add_handler(CommandHandler("price_remove", price_remove_start))
-    app.add_handler(CommandHandler("price_test", price_test_start))
-    app.add_handler(CommandHandler("price_report", price_report))
+    app.add_handler(CommandHandler("priceadd", price_add_start))
+    app.add_handler(CommandHandler("pricedone", price_done))
+    app.add_handler(CommandHandler("pricecancel", price_cancel))
+    app.add_handler(CommandHandler("priceremove", price_remove_start))
+    app.add_handler(CommandHandler("pricetest", price_test_start))
+    app.add_handler(CommandHandler("pricereport", price_report))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # --- Schedule background jobs ---
