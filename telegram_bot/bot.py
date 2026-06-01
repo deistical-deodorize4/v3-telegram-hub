@@ -733,7 +733,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if text in ("🖥 Monitor", "/monitor"):
         try:
             report = sysmon.get_report()
-            await update.message.reply_text(f"```{report}```", parse_mode="Markdown")
+            await update.message.reply_text(report)
         except Exception as exc:
             await update.message.reply_text(f"Monitor error: {exc}")
         return
