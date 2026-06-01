@@ -568,6 +568,393 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.reply_text("📊 No data yet — try again in a minute.")
 
 
+# ---------------------------------------------------------------------------
+# Price Watch — interactive flows
+# ---------------------------------------------------------------------------
+
+def _detect_site_from_url(url: str) -> tuple[str, str] | None:
+    """Detect (site_key, currency) from a URL, or None if unknown."""
+    domain = url.lower()
+    if "seeedstudio.com" in domain:
+        return "seeed", "USD"
+    if "tiendatec.es" in domain:
+        return "tiendatec", "EUR"
+    if "amazon.es" in domain:
+        return "amazon", "EUR"
+    if "amazon.de" in domain:
+        return "amazon", "EUR"
+    if "amazon.co.uk" in domain:
+        return "amazon", "GBP"
+    if "amazon.com" in domain:
+        return "amazon", "USD"
+    return None
+
+
+async def price_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the add-product flow."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    session["mode"] = "price_add"
+    session["form"] = {"name": "", "urls": [], "waiting_for": "name"}
+    await update.message.reply_text(
+        "📦 *Product name?*\n\n"
+        "Send /price_cancel anytime to cancel.",
+        parse_mode="Markdown",
+    )
+
+
+async def price_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Finish URL entry and show preview."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    form = session.get("form", {})
+
+    if session["mode"] != "price_add" or form.get("waiting_for") != "url":
+        await update.message.reply_text("Nothing to finish.")
+        return
+
+    if not form["urls"]:
+        await update.message.reply_text("No URLs added yet. Send at least one link.")
+        return
+
+    # Show preview
+    lines = ["📋 *Preview*", "───", ""]
+    lines.append(f"📦 *{form['name']}*")
+    for u in form["urls"]:
+        lines.append(f"  ✅ {u['site_name']}: *{u['price']:.2f} {u['currency']}*")
+    lines.append("")
+    lines.append("Save? (y/n)")
+
+    form["waiting_for"] = "confirm"
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def price_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancel any price-watch operation."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    session["mode"] = "menu"
+    session["form"] = {}
+    await update.message.reply_text("❌ Cancelled.", reply_markup=MENU_KEYBOARD)
+
+
+async def price_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show product list for removal."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    items = pw.load_config()
+    if not items:
+        await update.message.reply_text("No products in watchlist.")
+        return
+
+    lines = ["❌ *Remove product*", "───", ""]
+    for i, item in enumerate(items, 1):
+        lines.append(f"{i}. {item.name} (`{item.id}`)")
+    lines.append("")
+    lines.append("Send the number to remove or /price_cancel.")
+
+    session["mode"] = "price_remove"
+    session["form"] = {"items": items}
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def price_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run a fresh price check and show the report."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    session["mode"] = "price_menu"
+    await update.message.reply_text("⏳ Checking prices…")
+    try:
+        results = pw.check_all()
+        report = pw.format_ondemand(results)
+        await update.message.reply_text(report, parse_mode="Markdown")
+        changes = pw.detect_changes(results)
+        alert = pw.format_alerts(changes)
+        if alert:
+            await update.message.reply_text(alert, parse_mode="Markdown")
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Error: {exc}")
+
+
+async def price_test_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the test-a-URL flow."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    session["mode"] = "price_test"
+    session["form"] = {}
+    await update.message.reply_text(
+        "🔍 Send a URL to test, or /price_cancel.",
+    )
+
+
+def _save_product(form: dict) -> None:
+    """Append a new product to watchlist.json."""
+    import json
+    from price_watcher.price_watcher import CONFIG_FILE, WatchItem, WatchUrl
+
+    item_id = form["name"].lower().replace(" ", "-")[:30]
+    # Avoid duplicate IDs
+    existing = pw.load_config()
+    used_ids = {e.id for e in existing}
+    base_id = item_id
+    n = 1
+    while item_id in used_ids:
+        item_id = f"{base_id}-{n}"
+        n += 1
+
+    urls = []
+    for u in form["urls"]:
+        urls.append({
+            "site": u["site"],
+            "url": u["url"],
+            "currency": u["currency"],
+        })
+
+    entry = {
+        "id": item_id,
+        "name": form["name"],
+        "name_keywords": form.get("name_keywords", [form["name"]]),
+        "urls": urls,
+    }
+
+    if CONFIG_FILE.exists():
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        items = data if isinstance(data, list) else data.get("items", [])
+    else:
+        items = []
+
+    items.append(entry)
+    CONFIG_FILE.write_text(
+        json.dumps({"items": items}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+async def price_handle_add_message(update: Update, text: str) -> bool:
+    """Handle a message during the price_add flow. Returns True if handled."""
+    user_id = update.effective_user.id
+    session = _get_session(user_id)
+    form = session["form"]
+
+    # Step 1: waiting for product name
+    if form["waiting_for"] == "name":
+        if not text.strip():
+            await update.message.reply_text("Name can't be empty.")
+            return True
+        form["name"] = text.strip()
+        form["name_keywords"] = [text.strip()]
+        form["waiting_for"] = "url"
+        await update.message.reply_text(
+            f"📦 *{form['name']}*\n\n"
+            "🔗 Send a link. I'll detect the site and test it.\n"
+            "Send /price_done when finished or /price_cancel to cancel.",
+            parse_mode="Markdown",
+        )
+        return True
+
+    # Step 2: waiting for URLs
+    if form["waiting_for"] == "url":
+        detected = _detect_site_from_url(text)
+        if not detected:
+            await update.message.reply_text(
+                "❌ Can't detect site from that URL.\n"
+                "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com / .de / .co.uk\n"
+                "Try again or /price_done."
+            )
+            return True
+
+        site_key, currency = detected
+
+        # Live-test the URL
+        status_msg = await update.message.reply_text("⏳ Testing link…")
+        try:
+            from price_watcher.scrapers import scrape
+            price, currency_got, site_name, product_name, matched = scrape(
+                site_key, text, [form["name"]], timeout=20,
+            )
+            # Use detected currency unless scraper returned different
+            display_currency = currency_got or currency
+        except Exception as exc:
+            await status_msg.edit_text(
+                f"❌ Error scraping: {exc}\n"
+                "Send another URL or /price_done."
+            )
+            return True
+
+        name_status = "✅ matches" if matched else "⚠️ *does NOT match*"
+        await status_msg.edit_text(
+            f"🔗 *{site_name}*\n"
+            f"Price: *{price:.2f} {display_currency}*\n"
+            f"Name: {name_status}\n\n"
+            "Save this link? (y/n)",
+            parse_mode="Markdown",
+        )
+        form["pending_url"] = {
+            "site": site_key,
+            "site_name": site_name,
+            "url": text,
+            "currency": display_currency,
+            "price": price,
+            "name_matched": matched,
+        }
+        form["waiting_for"] = "url_confirm"
+        return True
+
+    # Step 3: URL confirmation (y/n)
+    if form["waiting_for"] == "url_confirm":
+        if text.lower() in ("y", "yes"):
+            pending = form.pop("pending_url", None)
+            if pending:
+                form["urls"].append(pending)
+                await update.message.reply_text(
+                    f"✅ Saved. Send another URL or /price_done."
+                )
+        else:
+            form.pop("pending_url", None)
+            await update.message.reply_text("Discarded. Send another URL or /price_done.")
+        form["waiting_for"] = "url"
+        return True
+
+    # Step 4: confirm save (y/n from preview)
+    if form["waiting_for"] == "confirm":
+        if text.lower() in ("y", "yes"):
+            _save_product(form)
+            session["mode"] = "menu"
+            session["form"] = {}
+            await update.message.reply_text(
+                "✅ Product added! Run /price_report to check it.",
+                reply_markup=MENU_KEYBOARD,
+            )
+        else:
+            session["mode"] = "menu"
+            session["form"] = {}
+            await update.message.reply_text("❌ Not saved.", reply_markup=MENU_KEYBOARD)
+        return True
+
+    return False
+
+
+async def price_handle_remove_message(update: Update, text: str) -> bool:
+    """Handle a number pick during removal flow."""
+    user_id = update.effective_user.id
+    session = _get_session(user_id)
+    form = session["form"]
+    items = form.get("items", [])
+
+    try:
+        idx = int(text.strip()) - 1
+        if idx < 0 or idx >= len(items):
+            raise ValueError
+    except (ValueError, IndexError):
+        await update.message.reply_text(f"Send a number 1–{len(items)}.")
+        return True
+
+    removed = items[idx]
+
+    # Preview before deleting
+    lines = ["📋 *Preview*", "───", ""]
+    lines.append(f"❌ Removing: *{removed.name}* (`{removed.id}`)")
+    lines.append("")
+    lines.append("Confirm? (y/n)")
+    form["remove_idx"] = idx
+    form["waiting_for"] = "remove_confirm"
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return True
+
+
+async def price_handle_message(update: Update, text: str) -> None:
+    """Route messages to the right price-watch flow."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    mode = session["mode"]
+
+    if mode == "price_add":
+        handled = await price_handle_add_message(update, text)
+        if not handled:
+            await update.message.reply_text("Hmm? Send a URL, /price_done, or /price_cancel.")
+        return
+
+    if mode == "price_remove":
+        # Check for removal confirmation (y/n)
+        if session.get("form", {}).get("waiting_for") == "remove_confirm":
+            form = session["form"]
+            if text.lower() in ("y", "yes"):
+                idx = form["remove_idx"]
+                items = form["items"]
+                removed_id = items[idx].id
+
+                # Delete from watchlist.json
+                import json
+                from price_watcher.price_watcher import CONFIG_FILE
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                items_list = data if isinstance(data, list) else data.get("items", [])
+                items_list = [i for i in items_list if i.get("id") != removed_id]
+                CONFIG_FILE.write_text(
+                    json.dumps({"items": items_list}, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                session["mode"] = "menu"
+                session["form"] = {}
+                await update.message.reply_text(
+                    f"✅ Removed *{removed_id}*.", parse_mode="Markdown",
+                    reply_markup=MENU_KEYBOARD,
+                )
+            else:
+                session["mode"] = "menu"
+                session["form"] = {}
+                await update.message.reply_text("❌ Not removed.", reply_markup=MENU_KEYBOARD)
+            return
+
+        # Otherwise it's a number pick
+        handled = await price_handle_remove_message(update, text)
+        if not handled:
+            await update.message.reply_text("Send a number or /price_cancel.")
+        return
+
+    if mode == "price_test":
+        detected = _detect_site_from_url(text)
+        if not detected:
+            await update.message.reply_text(
+                "❌ Can't detect site.\n"
+                "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com"
+            )
+            return
+
+        site_key, currency = detected
+        status_msg = await update.message.reply_text("⏳ Testing…")
+        try:
+            from price_watcher.scrapers import scrape
+            price, currency_got, site_name, product_name, matched = scrape(
+                site_key, text, [], timeout=20,
+            )
+            display_currency = currency_got or currency
+            name_str = f"📄 {product_name}" if product_name else ""
+            await status_msg.edit_text(
+                f"🔍 *{site_name}*\n"
+                f"Price: *{price:.2f} {display_currency}*\n"
+                f"{name_str}",
+                parse_mode="Markdown",
+            )
+        except Exception as exc:
+            await status_msg.edit_text(f"❌ Error: {exc}")
+
+        session["mode"] = "price_menu"
+        return
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
@@ -764,19 +1151,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"Monitor error: {exc}")
         return
 
-    # ------- Price Watch -------
+    # ------- Price Watch sub-menu -------
     if text == "💰 Price Watch":
-        await update.message.reply_text("⏳ Checking prices…")
-        try:
-            results = pw.check_all()
-            report = pw.format_ondemand(results)
-            await update.message.reply_text(report, parse_mode="Markdown")
-            changes = pw.detect_changes(results)
-            alert = pw.format_alerts(changes)
-            if alert:
-                await update.message.reply_text(alert, parse_mode="Markdown")
-        except Exception as exc:
-            await update.message.reply_text(f"❌ Price watch error: {exc}")
+        session["mode"] = "price_menu"
+        results = pw.check_all()
+        report = pw.format_ondemand(results)
+        msg = (
+            f"{report}\n"
+            "───\n\n"
+            "➕ /price_add    Add product\n"
+            "❌ /price_remove Remove product\n"
+            "🔍 /price_test   Test a URL\n"
+            "📊 /price_report View report"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
+    # ------- Price Watch interactive flows -------
+    if session["mode"] in ("price_add", "price_remove", "price_test"):
+        await price_handle_message(update, text)
         return
 
     # ------- Default: show hub menu -------
@@ -790,9 +1183,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+
 # ---------------------------------------------------------------------------
 # Application entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Start the polling bot with scheduled jobs."""
@@ -807,6 +1202,12 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("monitor", handle_message))
+    app.add_handler(CommandHandler("price_add", price_add_start))
+    app.add_handler(CommandHandler("price_done", price_done))
+    app.add_handler(CommandHandler("price_cancel", price_cancel))
+    app.add_handler(CommandHandler("price_remove", price_remove_start))
+    app.add_handler(CommandHandler("price_test", price_test_start))
+    app.add_handler(CommandHandler("price_report", price_report))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # --- Schedule background jobs ---
