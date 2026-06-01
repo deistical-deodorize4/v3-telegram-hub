@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "id": "t1000e",
+      "name": "SenseCAP T1000-E",
+      "name_keywords": ["SenseCAP T1000-E", "SenseCAP Card Tracker T1000-E"],
+      "urls": [
+        {
+          "site": "seeed",
+          "url": "https://www.seeedstudio.com/SenseCAP-Card-Tracker-T1000-E-for-Meshtastic-p-5913.html",
+          "currency": "USD"
+        },
+        {
+          "site": "tiendatec",
+          "url": "https://www.tiendatec.es/maker-zone/modulos/2736-sensecap-card-tracker-t1000-e-localizador-gps-meshtastic-5904422386191.html",
+          "currency": "EUR"
+        },
+        {
+          "site": "amazon",
+          "url": "https://www.amazon.es/-/en/SenseCAP-T1000-Card-Tracker-Meshtastic/dp/B0DJ6KGXKB/",
+          "currency": "EUR"
+        }
+      ]
+    }
+  ]
+}

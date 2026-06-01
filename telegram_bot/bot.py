@@ -34,6 +34,7 @@ if _PROJECT_ROOT not in sys.path:
 import config as cfg
 from system_monitor import monitor as sysmon
 from weather_forecaster import weather_aemet
+from price_watcher import price_watcher as pw
 from utils import log, setup_logging
 
 # ---------------------------------------------------------------------------
@@ -385,6 +386,23 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     _schedule_daily_report(context.job_queue)
 
 
+async def price_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hourly price check — alerts on changes."""
+    log.info("Running hourly price watch…")
+    try:
+        results = pw.check_all()
+        changes = pw.detect_changes(results)
+        alert = pw.format_alerts(changes)
+        if alert:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER, text=alert, parse_mode="Markdown",
+            )
+        else:
+            log.info("No price changes detected")
+    except Exception as exc:
+        log.error("Price watch job failed: %s", exc)
+
+
 def _schedule_sampling(job_queue) -> None:
     """Start 30-minute sampling aligned to :15 / :45."""
     delay = _seconds_until_sampling_slot()
@@ -404,6 +422,14 @@ def _schedule_daily_report(job_queue) -> None:
     delay = _seconds_until_22_madrid()
     job_queue.run_once(daily_report_job, delay)
     log.info("Daily report scheduled at 22:00 Madrid (in %.0fs)", delay)
+
+
+def _schedule_price_watch(job_queue) -> None:
+    """Start hourly price checks."""
+    delay = _seconds_until_sampling_slot()
+    job_queue.run_repeating(price_watch_job, interval=cfg.PRICE_WATCH_INTERVAL_SECONDS, first=delay)
+    log.info("Price watch scheduled every %d s (first in %.0fs)",
+             cfg.PRICE_WATCH_INTERVAL_SECONDS, delay)
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +504,7 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🌤 Weather", "🤖 Chatbot"],
         ["📚 Study Log", "💰 Finance Log"],
-        ["🖥 Monitor"],
+        ["🖥 Monitor", "💰 Price Watch"],
         ["🚪 Menu"],
     ],
     resize_keyboard=True,
@@ -738,6 +764,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"Monitor error: {exc}")
         return
 
+    # ------- Price Watch -------
+    if text == "💰 Price Watch":
+        await update.message.reply_text("⏳ Checking prices…")
+        try:
+            results = pw.check_all()
+            report = pw.format_ondemand(results)
+            await update.message.reply_text(report, parse_mode="Markdown")
+            changes = pw.detect_changes(results)
+            alert = pw.format_alerts(changes)
+            if alert:
+                await update.message.reply_text(alert, parse_mode="Markdown")
+        except Exception as exc:
+            await update.message.reply_text(f"❌ Price watch error: {exc}")
+        return
+
     # ------- Default: show hub menu -------
     session["mode"] = "menu"
     session["history"] = []
@@ -772,6 +813,7 @@ def main() -> None:
     _schedule_sampling(app.job_queue)
     _schedule_morning_report(app.job_queue)
     _schedule_daily_report(app.job_queue)
+    _schedule_price_watch(app.job_queue)
 
     log.info("🤖 Bot running — polling for updates…")
     app.run_polling()

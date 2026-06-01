@@ -40,6 +40,9 @@ WRITING_CACHE_DIR: Path = TEMP_DIR / "writing-cache"
 WRITING_INPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "inputs"
 WRITING_OUTPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "outputs"
 
+# Price watch
+PRICE_WATCH_INTERVAL_SECONDS: int = 3600  # hourly checks
+
 # ---------------------------------------------------------------------------
 # Environment variables (with optional .env support)
 # ---------------------------------------------------------------------------
