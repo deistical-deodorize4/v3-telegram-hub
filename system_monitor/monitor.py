@@ -201,7 +201,7 @@ def render(data: SystemSnapshot) -> str:
         r = data.ram
         lines.append(
             f"RAM          : {r.percent:5.1f}% {_bar(r.percent)} "
-            f"({r.used_mb:.1f}MB/{r.total_mb:.1f}MB)"
+            f"({r.used_mb:.1f}MB)"
         )
 
     if data.disk:
