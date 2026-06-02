@@ -36,11 +36,6 @@ WEATHER_SAVED_MODEL_DIR: Path = MODEL_DIR / "weather_saved_model"
 # Temporary directory (maps to tmpfs on Pi — protects SD card from wear)
 TEMP_DIR: Path = Path("/tmp") / PROJECT_ROOT.name
 
-# Writing corrector — cache goes to RAM, inputs/outputs stay on SD
-WRITING_CACHE_DIR: Path = TEMP_DIR / "writing-cache"
-WRITING_INPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "inputs"
-WRITING_OUTPUTS_DIR: Path = PROJECT_ROOT / "writing_corrector" / "outputs"
-
 # Price watch
 PRICE_WATCH_INTERVAL_SECONDS: int = 3600  # hourly checks
 
@@ -58,14 +53,12 @@ except ImportError:
     pass
 
 TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 TELEGRAM_USER_ID: int = int(os.environ.get("TELEGRAM_USER_ID", "0"))
 AEMET_API_KEY: str = os.environ.get("AEMET_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Raspberry Pi Zero 2W performance tuning
 # ---------------------------------------------------------------------------
-CHAT_HISTORY_CAP: int = 10          # Max messages kept per session (RAM)
 FORECAST_CACHE_SECONDS: int = 900   # 15 min between weather API calls
 TFLITE_NUM_THREADS: int = 2         # Pi Zero 2W is dual-core Cortex-A53
 
@@ -98,15 +91,9 @@ AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoi
 AEMET_UVI_LOCALIDAD: str = "Zaragoza"      # Localidad name in UV index response
 
 # ---------------------------------------------------------------------------
-# Gemini model name (single source of truth)
-# ---------------------------------------------------------------------------
-GEMINI_MODEL: str = "gemini-2.5-flash"
-
-# ---------------------------------------------------------------------------
 # Ensure essential directories exist
 # ---------------------------------------------------------------------------
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
-WRITING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-WRITING_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+
