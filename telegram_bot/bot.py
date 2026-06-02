@@ -36,6 +36,7 @@ from price_watcher import price_watcher as pw
 from reminder import reminder as rmd
 from impulse_buy import wish as ibw
 from finance_tracker import budget as bgt
+from study_tracker import dashboard as stdash
 from utils import log, setup_logging
 
 # ---------------------------------------------------------------------------
@@ -606,6 +607,70 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.reply_text(report, parse_mode="Markdown")
         else:
             await update.message.reply_text("📊 No data yet — try again in a minute.")
+
+
+# ---------------------------------------------------------------------------
+# Study Dashboard commands
+# ---------------------------------------------------------------------------
+
+
+async def streak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show study streak."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    cur, longest, dates = stdash.calc_streak()
+    if cur == 0:
+        await update.message.reply_text("📚 No study data yet. Log your first session with *Study Log*!", parse_mode="Markdown")
+        return
+
+    lines = ["🔥 *Study Streak*", "───", ""]
+    lines.append(f"Current:  **{cur}** day{'s' if cur != 1 else ''}")
+    lines.append(f"Longest:  **{longest}** day{'s' if longest != 1 else ''}")
+
+    if len(dates) <= 7:
+        lines.append("")
+        lines.append("_Days:_ " + ", ".join(dates[-7:]))
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show weekly study summary."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    args: list[str] = context.args if context.args else []
+    week_arg = args[0] if args else None
+    result = stdash.week_summary(week_arg)
+    if result:
+        await update.message.reply_text(result, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("📚 No study data yet.", parse_mode="Markdown")
+
+
+async def units_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show unit coverage."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    result = stdash.unit_coverage()
+    if result:
+        await update.message.reply_text(result, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("📚 No study data yet.", parse_mode="Markdown")
+
+
+async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show all-time study progress."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    result = stdash.all_time_progress()
+    if result:
+        await update.message.reply_text(result, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("📚 No study data yet. Log your first session with *Study Log*!", parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -1595,6 +1660,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "`/daily`      Daily stats report\n"
             "`/monitor`    Live system monitor\n"
             "`/cancel`     Cancel any flow\n\n"
+            "🔹 *Study*\n"
+            "`/streak`       Study streak\n"
+            "`/week`         Weekly summary\n"
+            "`/units`        Unit coverage\n"
+            "`/progress`     All-time progress\n\n"
             "🔹 *Price Watch*\n"
             "`/priceadd`     Add product\n"
             "`/priceedit`    Edit product\n"
@@ -1640,6 +1710,10 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("monitor", handle_message))
+    app.add_handler(CommandHandler("streak", streak_command))
+    app.add_handler(CommandHandler("week", week_command))
+    app.add_handler(CommandHandler("units", units_command))
+    app.add_handler(CommandHandler("progress", progress_command))
     app.add_handler(CommandHandler("priceadd", price_add_start))
     app.add_handler(CommandHandler("pricedone", price_done))
     app.add_handler(CommandHandler("cancel", price_cancel))
