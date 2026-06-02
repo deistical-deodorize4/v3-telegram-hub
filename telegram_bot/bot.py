@@ -362,27 +362,27 @@ async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             chat_id=ALLOWED_USER,
             text="☀️ Buenos días — AEMET data unavailable this morning.",
         )
-    # Check for impulse buy wishes that are 10+ days old
+    # Check for impulse buy wishes due for re-evaluation
     try:
-        due = ibw.get_pending(days=10)
+        due = ibw.get_due_for_recheck()
         for w in due:
             keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Yes, buying it", callback_data=f"impulse_yes_{w.id}"),
-                    InlineKeyboardButton("❌ No, pass", callback_data=f"impulse_no_{w.id}"),
+                    InlineKeyboardButton("✅ Sí, comprar", callback_data=f"impulse_yes_{w.id}"),
+                    InlineKeyboardButton("❌ No, paso", callback_data=f"impulse_no_{w.id}"),
                 ]
             ])
             await context.bot.send_message(
                 chat_id=ALLOWED_USER,
-                text=ibw.format_prompt(w),
+                text=ibw.format_recheck_prompt(w),
                 parse_mode="Markdown",
                 reply_markup=keyboard,
             )
             ibw.mark_asked(w.id)
         if due:
-            log.info("Impulse check: asked about %d wish(es)", len(due))
+            log.info("Impulse re-check: asked about %d wish(es)", len(due))
     except Exception as exc:
-        log.error("Impulse check failed: %s", exc)
+        log.error("Impulse re-check failed: %s", exc)
     # Re-schedule for tomorrow
     _schedule_morning_report(context.job_queue)
 
@@ -838,12 +838,16 @@ async def impulse_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     data = query.data
     if data.startswith("impulse_yes_"):
         wish_id = data.replace("impulse_yes_", "")
+        w = ibw.get_wish_by_id(wish_id)
         ibw.mark_kept(wish_id)
-        await query.edit_message_text("✅ Go buy it! 🎉")
+        name = f" *{w.text}*" if w else ""
+        await query.edit_message_text(f"✅ ¡A comprar{name}! 🎉")
     elif data.startswith("impulse_no_"):
         wish_id = data.replace("impulse_no_", "")
+        w = ibw.get_wish_by_id(wish_id)
         ibw.mark_dropped(wish_id)
-        await query.edit_message_text("❌ Good call! Dodged an impulse.")
+        name = f" *{w.text}*" if w else ""
+        await query.edit_message_text(f"❌ Bien hecho{name} — impulso esquivado.")
 
 
 async def price_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1632,8 +1636,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["mode"] = "impulse_msg"
         session["form"] = {}
         await update.message.reply_text(
-            "💸 *What do you want?*\n\n"
-            "e.g. `Sony WH-1000XM5 for 350€`\n"
+            "💸 *¿Qué quieres comprar?*\n\n"
             "Send /cancel anytime.",
             parse_mode="Markdown",
         )
@@ -1644,13 +1647,79 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text("What do you want?")
             return
         w = ibw.add_wish(text.strip())
+        session["form"] = {"wish_id": w.id}
+        session["mode"] = "impulse_eval_uses"
         await update.message.reply_text(
-            f"✅ Saved! I'll ask you in 10 days if you still want it.\n💸 {w.text}",
-            reply_markup=MENU_KEYBOARD,
+            f"✅ Guardado! *{w.text}*\n\n"
+            f"Vamos a evaluarlo:\n\n"
+            f"{ibw.EVAL_QUESTIONS[0][1]}",
+            parse_mode="Markdown",
         )
-        session["mode"] = "menu"
-        session["form"] = {}
         return
+
+    # ------- Impulse Buy — evaluation flow -------
+    if session["mode"] in ("impulse_eval_uses", "impulse_eval_alternative",
+                           "impulse_eval_situations", "impulse_eval_money"):
+        wish_id = session["form"].get("wish_id", "")
+        w = ibw.get_wish_by_id(wish_id)
+        if not w:
+            await update.message.reply_text("⚠️ Wish not found. Start again.")
+            session["mode"] = "menu"
+            session["form"] = {}
+            return
+
+        eval_data = session["form"].setdefault("eval_data", {})
+
+        if session["mode"] == "impulse_eval_uses":
+            valid = ["0-1", "2-5", "6+"]
+            if text.strip() not in valid and text.strip() not in ("0-1 veces", "2-5 veces", "6+ veces"):
+                await update.message.reply_text(
+                    "Responde: `0-1` `2-5` o `6+`",
+                    parse_mode="Markdown",
+                )
+                return
+            eval_data["uses"] = text.strip()
+            session["mode"] = "impulse_eval_alternative"
+            await update.message.reply_text(ibw.EVAL_QUESTIONS[1][1], parse_mode="Markdown")
+            return
+
+        if session["mode"] == "impulse_eval_alternative":
+            if text.strip().lower() not in ("sí", "no"):
+                await update.message.reply_text("Responde *Sí* o *No*.", parse_mode="Markdown")
+                return
+            eval_data["alternative"] = text.strip()
+            session["mode"] = "impulse_eval_situations"
+            await update.message.reply_text(ibw.EVAL_QUESTIONS[2][1], parse_mode="Markdown")
+            return
+
+        if session["mode"] == "impulse_eval_situations":
+            if len(text.strip()) < 5:
+                await update.message.reply_text("Describe al menos una situación brevemente.")
+                return
+            eval_data["situations"] = text.strip()
+            session["mode"] = "impulse_eval_money"
+            await update.message.reply_text(ibw.EVAL_QUESTIONS[3][1], parse_mode="Markdown")
+            return
+
+        if session["mode"] == "impulse_eval_money":
+            if text.strip().lower() not in ("sí", "no"):
+                await update.message.reply_text("Responde *Sí* o *No*.", parse_mode="Markdown")
+                return
+            eval_data["money"] = text.strip()
+
+            # All answers collected → save evaluation and show result
+            updated = ibw.save_evaluation(wish_id, eval_data)
+            session["mode"] = "menu"
+            session["form"] = {}
+            if updated:
+                await update.message.reply_text(
+                    ibw.format_evaluation(updated),
+                    parse_mode="Markdown",
+                    reply_markup=MENU_KEYBOARD,
+                )
+            else:
+                await update.message.reply_text("⚠️ Error saving evaluation.", reply_markup=MENU_KEYBOARD)
+            return
 
     # ------- Commands -------
     if text == "📋 Commands":

@@ -1,5 +1,5 @@
 """
-Impulse Buy Cooler — save a wish, get asked 10 days later if you still want it.
+Impulse Buy Cooler — evaluate your wishes, get re-asked later if you still want it.
 Persists to JSON so nothing is lost on restart.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -27,9 +27,12 @@ WISHLIST_FILE: Path = _DATA_DIR / "wishlist.json"
 class WishItem:
     id: str
     text: str
-    created: str          # ISO timestamp
-    asked_at: str | None  # ISO timestamp when we last asked
-    status: str           # "pending" | "kept" | "dropped"
+    created: str                   # ISO timestamp
+    asked_at: str | None = None    # ISO timestamp when we last re-checked
+    status: str = "pending"        # "pending" | "kept" | "dropped"
+    evaluation: dict[str, Any] | None = None   # {"uses": "2-5", "alternative": "no", "situations": "...", "money": "no"}
+    result: str | None = None      # "buy" | "wait" — verdict from evaluation
+    next_check: str | None = None  # ISO datetime for next re-check
 
     def to_dict(self) -> dict:
         return {
@@ -38,6 +41,9 @@ class WishItem:
             "created": self.created,
             "asked_at": self.asked_at,
             "status": self.status,
+            "evaluation": self.evaluation,
+            "result": self.result,
+            "next_check": self.next_check,
         }
 
     @classmethod
@@ -48,6 +54,9 @@ class WishItem:
             created=d["created"],
             asked_at=d.get("asked_at"),
             status=d.get("status", "pending"),
+            evaluation=d.get("evaluation"),
+            result=d.get("result"),
+            next_check=d.get("next_check"),
         )
 
 
@@ -75,6 +84,20 @@ def save_all(items: list[WishItem]) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# CRUD
+# ---------------------------------------------------------------------------
+
+
+def get_wish_by_id(wish_id: str) -> WishItem | None:
+    """Return a single wish by ID, or None."""
+    items = load_all()
+    for w in items:
+        if w.id == wish_id:
+            return w
+    return None
+
+
 def add_wish(text: str) -> WishItem:
     items = load_all()
     now_str = datetime.now().isoformat(timespec="seconds")
@@ -82,28 +105,98 @@ def add_wish(text: str) -> WishItem:
         id=uuid.uuid4().hex[:8],
         text=text,
         created=now_str,
-        asked_at=None,
-        status="pending",
     )
     items.append(w)
     save_all(items)
     return w
 
 
-def get_pending(days: int = 10) -> list[WishItem]:
-    """Return pending wishes older than `days` days that haven't been asked yet."""
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+EVAL_QUESTIONS = [
+    ("uses", "¿Cuántas veces al mes crees que lo usarías?\n\n0-1 veces / 2-5 veces / 6+ veces"),
+    ("alternative", "¿Ya tienes algo que haga lo mismo o similar?\n\nSí / No"),
+    ("situations", "Describe 3 situaciones concretas donde lo usarías este mes (una frase corta):"),
+    ("money", "Si tuvieras el dinero ahora mismo, ¿preferirías quedártelo?\n\nSí / No"),
+]
+
+EVAL_RESPONSES: dict[str, list[str]] = {
+    "uses": ["0-1", "2-5", "6+"],
+    "alternative": ["sí", "no"],
+    "money": ["sí", "no"],
+}
+
+
+def _calc_score(evaluation: dict[str, Any]) -> int:
+    """Score the evaluation answers (0-9 scale)."""
+    score = 0
+    uses = evaluation.get("uses", "")
+    if uses.startswith("2") or uses.startswith("2-5"):
+        score += 2
+    elif uses.startswith("6"):
+        score += 3
+
+    alt = evaluation.get("alternative", "").strip().lower()
+    if alt == "no":
+        score += 2
+
+    sit = evaluation.get("situations", "").strip()
+    if len(sit) >= 15:  # at least 15 chars = real situations described
+        score += 2
+
+    money = evaluation.get("money", "").strip().lower()
+    if money == "no":
+        score += 2
+
+    return score
+
+
+def _calc_result(score: int) -> str:
+    return "buy" if score >= 5 else "wait"
+
+
+def _recheck_days(result: str) -> int:
+    return 5 if result == "buy" else 7
+
+
+def save_evaluation(wish_id: str, evaluation: dict[str, Any]) -> WishItem | None:
+    """Store evaluation, calculate result, schedule re-check. Returns updated wish or None."""
+    items = load_all()
+    for w in items:
+        if w.id == wish_id:
+            w.evaluation = evaluation
+            score = _calc_score(evaluation)
+            w.result = _calc_result(score)
+            now = datetime.now()
+            w.next_check = (now + timedelta(days=_recheck_days(w.result))).isoformat(timespec="seconds")
+            w.asked_at = None
+            save_all(items)
+            return w
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Re-check (replaces old get_pending)
+# ---------------------------------------------------------------------------
+
+
+def get_due_for_recheck() -> list[WishItem]:
+    """Return pending wishes whose next_check time has arrived."""
     now = datetime.now()
-    cutoff = now - timedelta(days=days)
     items = load_all()
     due = []
     for w in items:
         if w.status != "pending":
             continue
+        if not w.next_check:
+            continue
         try:
-            created_dt = datetime.fromisoformat(w.created)
+            check_dt = datetime.fromisoformat(w.next_check)
         except ValueError:
             continue
-        if created_dt <= cutoff and w.asked_at is None:
+        if check_dt <= now and w.asked_at is None:
             due.append(w)
     return due
 
@@ -113,6 +206,8 @@ def mark_kept(wish_id: str) -> None:
     for w in items:
         if w.id == wish_id:
             w.status = "kept"
+            w.next_check = None
+            w.asked_at = datetime.now().isoformat(timespec="seconds")
             break
     save_all(items)
 
@@ -122,12 +217,14 @@ def mark_dropped(wish_id: str) -> None:
     for w in items:
         if w.id == wish_id:
             w.status = "dropped"
+            w.next_check = None
+            w.asked_at = datetime.now().isoformat(timespec="seconds")
             break
     save_all(items)
 
 
 def mark_asked(wish_id: str) -> None:
-    """Record that we asked about this wish."""
+    """Record that we asked about this wish (without changing status)."""
     items = load_all()
     for w in items:
         if w.id == wish_id:
@@ -140,6 +237,46 @@ def mark_asked(wish_id: str) -> None:
 # Formatting
 # ---------------------------------------------------------------------------
 
+_EMOJI_MAP = {
+    "uses": {"0-1": "🟡", "2-5": "🟢", "6+": "💚"},
+    "alternative": {"sí": "🟡", "no": "🟢"},
+    "money": {"sí": "🟡", "no": "🟢"},
+}
+
+
+def format_evaluation(w: WishItem) -> str:
+    """Full evaluation verdict for a wish."""
+    if not w.evaluation or not w.result:
+        return f"💸 *{w.text}*\n_Aún no evaluado._"
+
+    e = w.evaluation
+    score = _calc_score(e)
+    days = _recheck_days(w.result)
+
+    lines = [f"💸 *Evaluación: {w.text}*", "───", ""]
+
+    uses_emoji = _EMOJI_MAP["uses"].get(e.get("uses", ""), "⚪")
+    alt_emoji = _EMOJI_MAP["alternative"].get(e.get("alternative", "").strip().lower(), "⚪")
+    money_emoji = _EMOJI_MAP["money"].get(e.get("money", "").strip().lower(), "⚪")
+    sit_ok = len(e.get("situations", "").strip()) >= 15
+    sit_emoji = "✅" if sit_ok else "⚠️"
+
+    lines.append(f"Uso mensual:    {e.get('uses', '?')}  {uses_emoji}")
+    lines.append(f"Alternativa:    {e.get('alternative', '?')}  {alt_emoji}")
+    lines.append(f"Situaciones:    {sit_emoji}")
+    lines.append(f"Preferirías el\ndinero?:        {e.get('money', '?')}  {money_emoji}")
+    lines.append("")
+
+    if w.result == "buy":
+        lines.append(f"📊 *Resultado: COMPRAR* ✅ ({score}/9)")
+        lines.append(f"Te preguntaré de nuevo en {days} días.")
+    else:
+        lines.append(f"📊 *Resultado: ESPERAR* ⏳ ({score}/9)")
+        lines.append(f"Te preguntaré de nuevo en {days} días.")
+
+    return "\n".join(lines)
+
+
 def format_wishlist() -> str | None:
     items = load_all()
     if not items:
@@ -147,14 +284,51 @@ def format_wishlist() -> str | None:
     lines = ["💸 *Wish History*", "───", ""]
     for w in reversed(items):  # newest first
         icon = {"pending": "⏳", "kept": "✅", "dropped": "❌"}.get(w.status, "❓")
-        lines.append(f"{icon} {w.text}")
+        result_tag = ""
+        if w.result and w.status == "pending":
+            result_tag = " 🏷️COMPRAR🏷️" if w.result == "buy" else " ⏳ESPERAR⏳"
+        lines.append(f"{icon} {w.text}{result_tag}")
     return "\n".join(lines)
 
 
-def format_prompt(w: WishItem) -> str:
-    """Message to ask the user if they still want it."""
-    return (
-        f"💸 *Impulse Check*\n"
-        f"You wanted: {w.text}\n\n"
-        f"Still want it?"
-    )
+def format_recheck_prompt(w: WishItem) -> str:
+    """Message to ask the user at re-check time — shows date + past answers."""
+    # Format creation date nicely
+    try:
+        dt = datetime.fromisoformat(w.created)
+        date_str = dt.strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        date_str = w.created
+
+    lines = [
+        f"💸 *Re-evaluación: {w.text}*",
+        "───",
+        "",
+        f"El día {date_str} dijiste que querías esto.",
+        "Vamos a reevaluar:",
+        "",
+    ]
+
+    if w.evaluation:
+        e = w.evaluation
+        uses_emoji = _EMOJI_MAP["uses"].get(e.get("uses", ""), "⚪")
+        alt_emoji = _EMOJI_MAP["alternative"].get(e.get("alternative", "").strip().lower(), "⚪")
+        money_emoji = _EMOJI_MAP["money"].get(e.get("money", "").strip().lower(), "⚪")
+        sit_ok = len(e.get("situations", "").strip()) >= 15
+        sit_emoji = "✅" if sit_ok else "⚠️"
+
+        lines.append(f"📋 *Lo que respondiste:*")
+        lines.append(f"  Uso mensual:    {e.get('uses', '?')}  {uses_emoji}")
+        lines.append(f"  Alternativa:    {e.get('alternative', '?')}  {alt_emoji}")
+        lines.append(f"  Situaciones:    {sit_emoji}")
+        lines.append(f"  Preferirías el dinero?:  {e.get('money', '?')}  {money_emoji}")
+
+        if w.result:
+            score = _calc_score(e)
+            tag = "🏷️COMPRAR🏷️" if w.result == "buy" else "⏳ESPERAR⏳"
+            lines.append(f"  Veredicto:      {tag} ({score}/9)")
+
+    lines.append("")
+    lines.append("¿Todavía lo quieres?")
+
+    return "\n".join(lines)
