@@ -271,7 +271,7 @@ def format_ondemand(results: list[dict] | None = None) -> str:
 
     lines.append("")
     for name, entries in by_item.items():
-        lines.append(f"  {name}")
+        lines.append(f">> {name}")
         for e in entries:
             if e["error"]:
                 lines.append(f"    {e['site']}  broken link")
@@ -300,7 +300,7 @@ def format_alerts(changes: list[dict]) -> str | None:
     lines = ["> Price Alert"]
     for c in changes:
         lines.append(
-            f"  {c['item_name']} ({c['site']})"
+            f">> {c['item_name']} ({c['site']})"
         )
         lines.append(
             f"    {_price_str(c['price'], c['currency'])}  ({c['diff']:+.2f} {c['currency']})"

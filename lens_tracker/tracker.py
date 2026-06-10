@@ -53,7 +53,7 @@ def status(path: Path) -> str:
         lines.append("  wearing  no")
 
     lines.append("")
-    lines.append("  Send `in` / `out` / `new`")
+    lines.append("  Send in / out / new")
     return "\n".join(lines)
 
 

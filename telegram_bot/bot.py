@@ -1712,8 +1712,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["mode"] = "reminder_msg"
         session["form"] = {}
         await update.message.reply_text(
-            "📝 *What should I remind you about?*",
-            parse_mode="Markdown",
+            "> Reminder\n  what to remind you about?",
         )
         return
 
@@ -1724,9 +1723,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["form"]["msg"] = text.strip()
         session["mode"] = "reminder_time"
         await update.message.reply_text(
-            "🕐 *When?*\n\n"
-            "Send /cancel anytime.",
-            parse_mode="Markdown",
+            "> When?\n  /cancel to cancel",
         )
         return
 
@@ -1734,14 +1731,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         dt = rmd.parse_datetime(text, cfg.TIMEZONE)
         if dt is None:
             await update.message.reply_text(
-            "🤔 Didn't understand. Try again, or /cancel.",
-                parse_mode="Markdown",
+                "! didnt understand. try again",
             )
             return
 
         if dt < datetime.now():
             await update.message.reply_text(
-                "⏳ That time is in the past. Pick a future time."
+                "! that time is in the past"
             )
             return
 
@@ -1762,9 +1758,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["mode"] = "impulse_msg"
         session["form"] = {}
         await update.message.reply_text(
-            "💸 *What do you want to buy?*\n\n"
-            "Send /cancel anytime.",
-            parse_mode="Markdown",
+            "> Impulse Buy\n  what do you want to buy?\n  /cancel to cancel",
         )
         return
 
@@ -1776,8 +1770,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["form"] = {"wish_id": w.id}
         session["mode"] = "impulse_eval_uses"
         await update.message.reply_text(
-            f"✅ Saved! *{w.text}*\n\n"
-            f"Let's evaluate it:\n\n"
+            f"> {w.text}\n  saved\n\n"
             f"{ibw.EVAL_QUESTIONS[0][1]}",
             parse_mode="Markdown",
         )
@@ -1851,18 +1844,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if text == "📋 Commands":
         cmds = (
             "> Commands\n\n"
+            ">> General\n"
             "  /start       hub menu\n"
             "  /daily       daily report\n"
             "  /monitor     system monitor\n"
             "  /cancel      cancel flow\n"
             "\n"
-            "  Study:\n"
+            ">> Study\n"
             "  /streak      study streak\n"
             "  /week        weekly summary\n"
             "  /units       unit coverage\n"
             "  /progress    all-time progress\n"
             "\n"
-            "  Price Watch:\n"
+            ">> Price Watch\n"
             "  /priceadd    add product\n"
             "  /priceedit   edit product\n"
             "  /priceremove remove product\n"
@@ -1870,10 +1864,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /pricedone   finish URLs\n"
             "  /pricereport view report\n"
             "\n"
-            "  Finance:\n"
+            ">> Finance\n"
             "  /budget      budget limits\n"
             "\n"
-            "  Other:\n"
+            ">> Tools\n"
             "  /wishlist    impulse buy history\n"
             "  /print       print a PDF"
         )
