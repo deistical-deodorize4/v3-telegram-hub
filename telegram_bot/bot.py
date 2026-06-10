@@ -1423,19 +1423,18 @@ async def lens_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def lens_refresh(update: Update, text: str) -> None:
-    if text == "in":
+    cmd = text.strip().lower()
+    if cmd == "in":
         ok, msg = lens.start_session(cfg.LENS_DATA)
         await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
-    elif text == "out":
+    elif cmd == "out":
         ok, msg, _ = lens.stop_session(cfg.LENS_DATA)
         await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
+    elif cmd in ("new", "fresh"):
+        ok, msg = lens.new_pair(cfg.LENS_DATA)
+        await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
     else:
-        text = text.strip().lower()
-        if text in ("new", "fresh"):
-            ok, msg = lens.new_pair(cfg.LENS_DATA)
-            await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
-        else:
-            await update.message.reply_text("Send `in`, `out`, or `new`.", parse_mode="Markdown")
+        await update.message.reply_text("Send `in`, `out`, or `new`.", parse_mode="Markdown")
     lens.reload()
 
 
