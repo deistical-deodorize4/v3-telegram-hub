@@ -50,7 +50,7 @@ def status(path: Path) -> str:
         delta = now - sd
         h, rem = divmod(int(delta.total_seconds()), 3600)
         m = rem // 60
-        lines.append(f"👁 Wearing since {sd.strftime('%d %b')}")
+        lines.append(f"👁 Wearing since {sd.strftime('%d %b')} ({delta.days}d)")
         lines.append("")
         lines.append("Send `out` to stop, `new` for fresh pair.")
     else:
@@ -81,9 +81,7 @@ def stop_session(path: Path) -> tuple[bool, str, timedelta | None]:
     delta = now - sd
     d["session_start"] = None
     _save(path)
-    h, rem = divmod(int(delta.total_seconds()), 3600)
-    m = rem // 60
-    return True, f"Stopped. Wore for {h}h {m}m.", delta
+    return True, f"Stopped. Wore for {delta.days}d.", delta
 
 
 def new_pair(path: Path, force: bool = False) -> tuple[bool, str]:
