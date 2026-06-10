@@ -140,42 +140,40 @@ class DailyStats:
 
         # ---- Build report ----
         lines = []
-        header = f"📊 Pi Daily Report — {day}"
+        header = f"> Daily Report — {day}"
         lines.append(header)
-        lines.append("━" * len(header))
-        lines.append("")
 
         # CPU line
-        cpu_line = f"🌡 CPU · avg {cpu_avg:.0f}% · max {cpu_max_s['cpu']:.0f}% at {cpu_max_s['time_str']} · now {cpu_now:.0f}%"
+        cpu_line = f"  CPU · avg {cpu_avg:.0f}% · max {cpu_max_s['cpu']:.0f}% at {cpu_max_s['time_str']} · now {cpu_now:.0f}%"
         lines.append(cpu_line)
 
         # RAM line
         ram_free_pct = (ram_free_now / ram_total * 100) if ram_total > 0 else 0
-        ram_alert = "  ⚠️" if ram_free_now < 150 else ""
+        ram_alert = "  !" if ram_free_now < 150 else ""
         ram_line = (
-            f"💾 RAM · avg {ram_avg:.0f}MB · min free {ram_min_free_s['ram_available_mb']:.0f}MB "
+            f"  RAM · avg {ram_avg:.0f}MB · min free {ram_min_free_s['ram_available_mb']:.0f}MB "
             f"at {ram_min_free_s['time_str']} · now {ram_free_now:.0f}MB ({ram_free_pct:.0f}% free){ram_alert}"
         )
         lines.append(ram_line)
 
         # Temp line
         if temp_avg is not None and temp_max_s is not None:
-            temp_alert = "  ⚠️" if temp_max_s["temp"] and temp_max_s["temp"] > 65 else ""
+            temp_alert = "  !" if temp_max_s["temp"] and temp_max_s["temp"] > 65 else ""
         else:
             temp_alert = ""
         if temp_avg is not None and temp_max_s is not None:
             temp_now_str = f"{temp_now:.1f}°C" if temp_now is not None else "N/A"
             temp_line = (
-                f"🔥 Temp · avg {temp_avg:.1f}°C · max {temp_max_s['temp']:.1f}°C "
+                f"  Temp · avg {temp_avg:.1f}°C · max {temp_max_s['temp']:.1f}°C "
                 f"at {temp_max_s['time_str']} · now {temp_now_str}{temp_alert}"
             )
         else:
-            temp_line = "🔥 Temp · N/A (sensor unavailable)"
+            temp_line = "  Temp · N/A (sensor unavailable)"
         lines.append(temp_line)
 
         # Disk line
-        disk_alert = "  ⚠️" if disk_pct > 75 else ""
-        lines.append(f"💽 Disk · {disk_free:.1f}GB free ({disk_pct:.0f}%){disk_alert}")
+        disk_alert = "  !" if disk_pct > 75 else ""
+        lines.append(f"  Disk · {disk_free:.1f}GB free ({disk_pct:.0f}%){disk_alert}")
 
         # Load average line
         load_1m_vals = [s["load_1m"] for s in samples if s["load_1m"] is not None]
@@ -183,9 +181,9 @@ class DailyStats:
             load_1m_avg = sum(load_1m_vals) / len(load_1m_vals)
             load_1m_max = max(load_1m_vals)
             cores = samples[-1].get("load_cores", 4) or 4
-            load_alert = "  ⚠️" if load_1m_max > cores else ""
+            load_alert = "  !" if load_1m_max > cores else ""
             lines.append(
-                f"📊 Load · avg {load_1m_avg:.2f} · max {load_1m_max:.2f} "
+                f"  Load · avg {load_1m_avg:.2f} · max {load_1m_max:.2f} "
                 f"({cores} cores){load_alert}"
             )
 
@@ -193,49 +191,48 @@ class DailyStats:
         sd_wear = _read_sd_wear()
         if sd_wear:
             label = "lifetime" if sd_wear["type"] == "lifetime" else "since boot"
-            lines.append(f"💾 SD Wear · {sd_wear['total_gb']}GB ({label})")
+            lines.append(f"  SD Wear · {sd_wear['total_gb']}GB ({label})")
 
         # Weather
-        lines.append(f"🌤 Weather APIs · Open-Meteo {om_status} · AEMET {aemet_status}")
+        lines.append(f"  Weather APIs · Open-Meteo {om_status} · AEMET {aemet_status}")
 
         # ---- Alerts section ----
         alerts = []
         if cpu_avg > 80:
             alerts.append(
-                f"• CPU avg at {cpu_avg:.0f}% (> 80% threshold)"
+                f"  CPU avg at {cpu_avg:.0f}% (> 80% threshold)"
             )
         if ram_free_now < 150:
             alerts.append(
-                f"• RAM free critically low: {ram_free_now:.0f}MB (< 150MB) "
+                f"  RAM free critically low: {ram_free_now:.0f}MB (< 150MB) "
                 f"at {ram_min_free_s['time_str']}"
             )
         if load_1m_vals and load_1m_max > cores:
             alerts.append(
-                f"• Load peaked at {load_1m_max:.2f} (saturated, ≥ {cores} cores)"
+                f"  Load peaked at {load_1m_max:.2f} (saturated, ≥ {cores} cores)"
             )
         if temp_max_s and temp_max_s["temp"] and temp_max_s["temp"] > 65:
             alerts.append(
-                f"• Temp peaked at {temp_max_s['temp']:.1f}°C (> 65°C threshold)"
+                f"  Temp peaked at {temp_max_s['temp']:.1f}°C (> 65°C threshold)"
             )
         if disk_pct > 75:
-            alerts.append(f"• Disk usage at {disk_pct:.0f}% (> 75% threshold)")
+            alerts.append(f"  Disk usage at {disk_pct:.0f}% (> 75% threshold)")
 
         if throttled_events:
-            alerts.append(f"• {len(throttled_events)} throttling event(s) detected")
+            alerts.append(f"  {len(throttled_events)} throttling event(s) detected")
 
         if alerts:
             lines.append("")
-            lines.append("⚠️ ALERTS")
+            lines.append("  alerts")
             lines.extend(alerts)
 
         # ---- Throttling status ----
         lines.append("")
-        lines.append("✅ No throttling events" if not throttled_events else "⚠️ Throttling occurred today")
+        lines.append("  ok: no throttling events" if not throttled_events else "  ! throttling occurred today")
 
         # ---- Sample count & footer ----
         lines.append("")
-        lines.append(f"_{n} samples collected_")
-        lines.append("━" * len(header))
+        lines.append(f"  {n} samples collected")
 
         return "\n".join(lines)
 
@@ -329,7 +326,7 @@ async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         await context.bot.send_message(
             chat_id=ALLOWED_USER,
-            text="☀️ Good morning — AEMET data unavailable this morning.",
+            text="> Morning\n  aemet data unavailable",
         )
     # Check for impulse buy wishes due for re-evaluation
     try:
@@ -337,8 +334,8 @@ async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         for w in due:
             keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Yes, buy it", callback_data=f"impulse_yes_{w.id}"),
-                    InlineKeyboardButton("❌ No, pass", callback_data=f"impulse_no_{w.id}"),
+                    InlineKeyboardButton("Yes, buy it", callback_data=f"impulse_yes_{w.id}"),
+                    InlineKeyboardButton("No, pass", callback_data=f"impulse_no_{w.id}"),
                 ]
             ])
             await context.bot.send_message(
@@ -366,7 +363,7 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         await context.bot.send_message(
             chat_id=ALLOWED_USER,
-            text="📊 Pi Daily Report — no data collected today (bot just started).",
+            text="> Daily Report\n  no data collected today (bot just started).",
         )
 
     # Month-end budget recap
@@ -481,16 +478,16 @@ async def startup_notification(app: Application) -> None:
     uptime_h = _get_uptime()
 
     if uptime_h < 0.17:  # less than ~10 minutes
-        icon = "⚠️"
-        note = "Possible power outage/restart"
+        icon = "!"
+        note = "possible power outage/restart"
     else:
-        icon = "ℹ️"
-        note = "Bot restarted (soft)"
+        icon = "i"
+        note = "bot restarted (soft)"
 
     msg = (
-        f"{icon} *pi02w Hub*\n"
-        f"🕐 {now}\n"
-        f"⏱ uptime: {uptime_h:.1f}h  ·  {note}"
+        f"! {icon} *pi02w Hub*\n"
+        f"  {now}\n"
+        f"  uptime: {uptime_h:.1f}h  ·  {note}"
     )
     try:
         await app.bot.send_message(
@@ -506,19 +503,19 @@ async def startup_notification(app: Application) -> None:
 user_sessions: dict[int, dict[str, Any]] = {}
 
 STUDY_STEPS = [
-    ("unit", "📖 Unit studied (1-69)?"),
-    ("hours", "⏱ Hours studied (e.g. 1.5)?"),
-    ("energy", "⚡ Energy level before studying (1-10)?"),
-    ("sleep", "😴 Hours of sleep last night?"),
-    ("grade", "🎯 Grade received? (send . if none yet)"),
-    ("rating", "⭐ Session quality rating (1-10)?"),
+    ("unit", "Unit studied (1-69)?"),
+    ("hours", "Hours studied (e.g. 1.5)?"),
+    ("energy", "Energy level before studying (1-10)?"),
+    ("sleep", "Hours of sleep last night?"),
+    ("grade", "Grade received? (send . if none yet)"),
+    ("rating", "Session quality rating (1-10)?"),
 ]
 
 FINANCE_STEPS = [
-    ("type", "💳 Type? (fixed / variable)"),
-    ("category", "🏷 Category? (e.g. food, transport, salary)"),
-    ("amount", "💶 Amount? (+ for income, - for expense. e.g. -12.50)"),
-    ("description", "📝 Description?"),
+    ("type", "Type? (fixed / variable)"),
+    ("category", "Category? (e.g. food, transport, salary)"),
+    ("amount", "Amount? (+ for income, - for expense. e.g. -12.50)"),
+    ("description", "Description?"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -576,7 +573,7 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if report:
             await update.message.reply_text(report, parse_mode="Markdown")
         else:
-            await update.message.reply_text("📊 No data yet — try again in a minute.")
+            await update.message.reply_text("> Daily Report\n  no data yet")
 
 
 # ---------------------------------------------------------------------------
@@ -731,8 +728,7 @@ async def price_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     session["form"] = {"name": "", "urls": [], "waiting_for": "name"}
     try:
         await update.message.reply_text(
-            "📦 *Product name?*\n\n"
-            "Send /cancel anytime to cancel.",
+            "> Price Watch\n  product name?\n  /cancel to cancel",
             parse_mode="Markdown",
         )
         log.warning("price_add_start reply sent OK")
@@ -764,10 +760,10 @@ async def price_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     # Show preview
-    lines = ["📋 *Preview*", "───", ""]
-    lines.append(f"📦 *{form['name']}*")
+    lines = ["> Preview", "───", ""]
+    lines.append(f">> {form['name']}")
     for u in form["urls"]:
-        lines.append(f"  ✅ {u['site_name']}: *{u['price']:.2f} {u['currency']}*")
+        lines.append(f"  {u['site_name']}: *{u['price']:.2f} {u['currency']}*")
     lines.append("")
     lines.append("Save? (y/n)")
 
@@ -796,7 +792,7 @@ async def wishlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(report, parse_mode="Markdown")
     else:
         await update.message.reply_text(
-            "No wishes yet.\nTap 💸 Impulse Buy to add one.",
+            "No wishes yet.\nTap Impulse Buy to add one.",
         )
 
 
@@ -830,7 +826,7 @@ async def price_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("No products in watchlist.")
         return
 
-    lines = ["❌ *Remove product*", "───", ""]
+    lines = ["> Remove product", "───", ""]
     for i, item in enumerate(items, 1):
         lines.append(f"{i}. {item.name} (`{item.id}`)")
     lines.append("")
@@ -870,7 +866,7 @@ async def price_test_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     session["mode"] = "price_test"
     session["form"] = {}
     await update.message.reply_text(
-        "🔍 Send a URL to test, or /cancel.",
+        "Send a URL to test, or /cancel.",
     )
 
 
@@ -885,7 +881,7 @@ async def price_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("No products in watchlist.")
         return
 
-    lines = ["✏️ *Edit product*", "───", ""]
+    lines = ["> Edit product", "───", ""]
     for i, item in enumerate(items, 1):
         lines.append(f"{i}. *{item.name}* (`{item.id}`)")
     lines.append("")
@@ -919,7 +915,7 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
         item = items[idx]
         form["item_idx"] = idx
 
-        lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+        lines = [f">> {item['name']}", "───", ""]
         for i, u in enumerate(item.get("urls", []), 1):
             lines.append(f"{i}. {u['site']}: {u['url']}")
         lines.append("")
@@ -941,8 +937,8 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
             form["step"] = "url"
             form["pending_url"] = {}
             await update.message.reply_text(
-                "🔗 Send a link to add. I'll detect the site and test it.\n"
-                "Send /cancel to cancel.",
+            "Send a link to add. I'll detect the site and test it.\n"
+            "Send /cancel to cancel.",
             )
             return
 
@@ -983,14 +979,14 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
         detected = _detect_site_from_url(text)
         if not detected:
             await update.message.reply_text(
-                "❌ Can't detect site from that URL.\n"
+                "! can't detect site from that URL.\n"
                 "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com / .de / .co.uk\n"
                 "Try again or /cancel."
             )
             return
 
         site_key, currency = detected
-        status_msg = await update.message.reply_text("⏳ Testing link…")
+        status_msg = await update.message.reply_text("~ testing link")
         try:
             from price_watcher.scrapers import scrape
             item_name = items[item_idx]["name"]
@@ -1000,15 +996,15 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
             display_currency = currency_got or currency
         except Exception as exc:
             await status_msg.edit_text(
-                f"❌ Error scraping: {exc}\nSend another URL or /cancel."
+                f"! error scraping: {exc}\nSend another URL or /cancel."
             )
             return
 
-        name_status = "✅ matches" if matched else "⚠️ *does NOT match*"
+        name_status = "matches" if matched else "*does NOT match*"
         await status_msg.edit_text(
-            f"🔗 *{site_name}*\n"
-            f"Price: *{price:.2f} {display_currency}*\n"
-            f"Name: {name_status}\n\n"
+            f">> {site_name}\n"
+            f"  price: *{price:.2f} {display_currency}*\n"
+            f"  name: {name_status}\n\n"
             "Save this link? (y/n)",
             parse_mode="Markdown",
         )
@@ -1036,7 +1032,7 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
 
                 # Show updated product view
                 item = items[item_idx]
-                lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+                lines = [f">> {item['name']}", "───", ""]
                 for i, u in enumerate(item.get("urls", []), 1):
                     lines.append(f"{i}. {u['site']}: {u['url']}")
                 lines.append("")
@@ -1060,7 +1056,7 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
             url_idx = form.get("remove_url_idx")
             removed = items[item_idx]["urls"].pop(url_idx)
             _save_items(items)
-            await update.message.reply_text(f"✅ Removed {removed['site']} link.")
+            await update.message.reply_text(f"> removed {removed['site']} link")
 
             # Show updated product view
             item = items[item_idx]
@@ -1071,12 +1067,12 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
                 session["mode"] = "menu"
                 session["form"] = {}
                 await update.message.reply_text(
-                    "ℹ️ Product had no URLs left — removed entirely.",
+                    "> no URLs left — removed",
                     reply_markup=MENU_KEYBOARD,
                 )
                 return
 
-            lines = [f"✏️ *{item['name']}* (`{item['id']}`)", "───", ""]
+            lines = [f">> {item['name']}", "───", ""]
             for i, u in enumerate(item.get("urls", []), 1):
                 lines.append(f"{i}. {u['site']}: {u['url']}")
             lines.append("")
@@ -1155,7 +1151,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         session["mode"] = "menu"
         session["form"] = {}
         await update.message.reply_text(
-            "⏳ Session expired. Start over.\n"
+            "~ session expired. start over.\n"
             "Use /priceadd to add a product.",
             reply_markup=MENU_KEYBOARD,
         )
@@ -1170,10 +1166,9 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         form["name_keywords"] = [text.strip()]
         form["waiting_for"] = "url"
         await update.message.reply_text(
-            f"📦 *{form['name']}*\n\n"
-            "🔗 Send a link. I'll detect the site and test it.\n"
+            f">> {form['name']}\n\n"
+            "Send a link. I'll detect the site and test it.\n"
             "Send /pricedone when finished or /cancel to cancel.",
-            parse_mode="Markdown",
         )
         return True
 
@@ -1182,7 +1177,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         detected = _detect_site_from_url(text)
         if not detected:
             await update.message.reply_text(
-                "❌ Can't detect site from that URL.\n"
+                "! can't detect site from that URL.\n"
                 "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com / .de / .co.uk\n"
                 "Try again or /pricedone."
             )
@@ -1191,26 +1186,25 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         site_key, currency = detected
 
         # Live-test the URL
-        status_msg = await update.message.reply_text("⏳ Testing link…")
+        status_msg = await update.message.reply_text("~ testing link")
         try:
             from price_watcher.scrapers import scrape
             price, currency_got, site_name, product_name, matched = scrape(
                 site_key, text, [form["name"]], timeout=20,
             )
-            # Use detected currency unless scraper returned different
             display_currency = currency_got or currency
         except Exception as exc:
             await status_msg.edit_text(
-                f"❌ Error scraping: {exc}\n"
+                f"! error scraping: {exc}\n"
                 "Send another URL or /pricedone."
             )
             return True
 
-        name_status = "✅ matches" if matched else "⚠️ *does NOT match*"
+        name_status = "matches" if matched else "*does NOT match*"
         await status_msg.edit_text(
-            f"🔗 *{site_name}*\n"
-            f"Price: *{price:.2f} {display_currency}*\n"
-            f"Name: {name_status}\n\n"
+            f">> {site_name}\n"
+            f"  price: *{price:.2f} {display_currency}*\n"
+            f"  name: {name_status}\n\n"
             "Save this link? (y/n)",
             parse_mode="Markdown",
         )
@@ -1232,7 +1226,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
             if pending:
                 form["urls"].append(pending)
                 await update.message.reply_text(
-                    f"✅ Saved. Send another URL or /pricedone."
+                    f"> saved. send another URL or /pricedone"
                 )
         else:
             form.pop("pending_url", None)
@@ -1247,7 +1241,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
             session["mode"] = "menu"
             session["form"] = {}
             await update.message.reply_text(
-                "✅ Product added! Run /pricereport to check it.",
+                "> product added. run /pricereport to check",
                 reply_markup=MENU_KEYBOARD,
             )
         else:
@@ -1277,8 +1271,8 @@ async def price_handle_remove_message(update: Update, text: str) -> bool:
     removed = items[idx]
 
     # Preview before deleting
-    lines = ["📋 *Preview*", "───", ""]
-    lines.append(f"❌ Removing: *{removed.name}* (`{removed.id}`)")
+    lines = ["> Preview", "───", ""]
+    lines.append(f"  removing: *{removed.name}* (`{removed.id}`)")
     lines.append("")
     lines.append("Confirm? (y/n)")
     form["remove_idx"] = idx
@@ -1324,7 +1318,7 @@ async def price_handle_message(update: Update, text: str) -> None:
                 session["mode"] = "menu"
                 session["form"] = {}
                 await update.message.reply_text(
-                    f"✅ Removed *{removed_id}*.", parse_mode="Markdown",
+                    f"> removed *{removed_id}*.", parse_mode="Markdown",
                     reply_markup=MENU_KEYBOARD,
                 )
             else:
@@ -1343,28 +1337,28 @@ async def price_handle_message(update: Update, text: str) -> None:
         detected = _detect_site_from_url(text)
         if not detected:
             await update.message.reply_text(
-                "❌ Can't detect site.\n"
+                "! can't detect site.\n"
                 "Supported: seeedstudio.com, tiendatec.es, amazon.es / .com"
             )
             return
 
         site_key, currency = detected
-        status_msg = await update.message.reply_text("⏳ Testing…")
+        status_msg = await update.message.reply_text("~ testing")
         try:
             from price_watcher.scrapers import scrape
             price, currency_got, site_name, product_name, matched = scrape(
                 site_key, text, [], timeout=20,
             )
             display_currency = currency_got or currency
-            name_str = f"📄 {product_name}" if product_name else ""
+            name_str = f"  {product_name}" if product_name else ""
             await status_msg.edit_text(
-                f"🔍 *{site_name}*\n"
-                f"Price: *{price:.2f} {display_currency}*\n"
+                f">> {site_name}\n"
+                f"  price: *{price:.2f} {display_currency}*\n"
                 f"{name_str}",
                 parse_mode="Markdown",
             )
         except Exception as exc:
-            await status_msg.edit_text(f"❌ Error: {exc}")
+            await status_msg.edit_text(f"! {exc}")
 
         session["mode"] = "price_menu"
         return
@@ -1392,13 +1386,13 @@ async def lens_refresh(update: Update, text: str) -> None:
     cmd = text.strip().lower()
     if cmd == "in":
         ok, msg = lens.start_session(cfg.LENS_DATA)
-        await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
+        await update.message.reply_text(f"{msg}", parse_mode="Markdown")
     elif cmd == "out":
         ok, msg, _ = lens.stop_session(cfg.LENS_DATA)
-        await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
+        await update.message.reply_text(f"{msg}", parse_mode="Markdown")
     elif cmd in ("new", "fresh"):
         ok, msg = lens.new_pair(cfg.LENS_DATA)
-        await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}", parse_mode="Markdown")
+        await update.message.reply_text(f"{msg}", parse_mode="Markdown")
     else:
         await update.message.reply_text("Send `in`, `out`, or `new`.", parse_mode="Markdown")
     lens.reload()
@@ -1424,8 +1418,7 @@ async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     session["mode"] = "print"
     session["form"] = {}
     await update.message.reply_text(
-        "🖨 *Print a PDF*\n\nSend the PDF file to print.\n/cancel to cancel.",
-        parse_mode="Markdown",
+        "> Print\n  send a PDF file\n  /cancel to cancel",
     )
 
 
@@ -1452,28 +1445,28 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
         session["form"] = {}
         return
 
-        status_msg = await update.message.reply_text("~ downloading")
+    status_msg = await update.message.reply_text("~ downloading")
     try:
         file = await context.bot.get_file(doc.file_id)
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
         await file.download_to_drive(local_path)
 
-        await status_msg.edit_text("⏳ Sending to printer…")
+        await status_msg.edit_text("~ sending to printer")
         success, msg = prn.print_pdf(local_path, cfg.PRINTER_ADDR, cfg.PRINTER_NAME)
 
         session["mode"] = "menu"
         session["form"] = {}
 
         if success:
-            await status_msg.edit_text(f"✅ {msg}")
+            await status_msg.edit_text(f"> {msg}")
         else:
-            await status_msg.edit_text(f"❌ {msg}")
+            await status_msg.edit_text(f"! {msg}")
 
         local_path.unlink(missing_ok=True)
     except Exception as e:
         session["mode"] = "menu"
         session["form"] = {}
-        await status_msg.edit_text(f"❌ Error: {e}")
+        await status_msg.edit_text(f"! {e}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1495,7 +1488,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_text(report, parse_mode="Markdown")
             else:
                 await update.message.reply_text(
-                    "❌ Could not fetch AEMET data. Check your API key and internet."
+                    "! Could not fetch AEMET data. Check your API key and internet."
                 )
         except Exception as exc:
             await update.message.reply_text(f"! aemet error: {exc}")
@@ -1534,7 +1527,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 val = text.strip()
         except (ValueError, TypeError):
             await update.message.reply_text(
-                f"⚠️ Invalid value. Try again.\n{STUDY_STEPS[step_index][1]}"
+                f"! Invalid value. Try again.\n{STUDY_STEPS[step_index][1]}"
             )
             return
 
@@ -1587,7 +1580,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     raise ValueError
         except (ValueError, TypeError):
             await update.message.reply_text(
-                f"⚠️ Invalid value. Try again.\n{FINANCE_STEPS[step_index][1]}"
+                f"! Invalid value. Try again.\n{FINANCE_STEPS[step_index][1]}"
             )
             return
 
@@ -1637,7 +1630,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["form"] = {}
         await update.message.reply_text(
             "> Print\n  send a PDF file\n  /cancel to cancel",
-            parse_mode="Markdown",
         )
         return
 

@@ -140,7 +140,7 @@ def week_summary(year_week: str | None = None) -> str | None:
             target_year = int(year_s)
             target_week = int(week_s)
         except (ValueError, IndexError):
-            return "⚠️ Use format YYYY-Www, e.g. `/week 2026-W22`."
+            return "! Use format YYYY-Www, e.g. `/week 2026-W22`."
     else:
         target_year, target_week, _ = today.isocalendar()
 

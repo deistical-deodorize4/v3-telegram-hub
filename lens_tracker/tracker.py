@@ -86,7 +86,7 @@ def new_pair(path: Path, force: bool = False) -> tuple[bool, str]:
     d["session_start"] = None
     d["pair_start"] = date.today().isoformat()
     _save(path)
-    return True, "✅ Fresh pair started! 30-day countdown begins."
+    return True, "Fresh pair started! 30-day countdown begins."
 
 
 def check_expiry(path: Path) -> str | None:
@@ -98,7 +98,7 @@ def check_expiry(path: Path) -> str | None:
     days = (date.today() - pd).days
     if days >= _LENS_DAYS:
         overdue = days - _LENS_DAYS
-        return (f"⚠️ *Lens pair is {_LENS_DAYS} days old!* "
+        return (f"! *Lens pair is {_LENS_DAYS} days old!* "
                 f"({overdue}d overdue)\n"
                 f"Change to a fresh pair and send `new`.")
     return None

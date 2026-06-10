@@ -657,7 +657,7 @@ def _cache_age_line() -> str:
     elapsed = time.time() - _aemet_last_ok
     if elapsed > 120 and _aemet_last_ok > 0:
         cache_time = datetime.fromtimestamp(_aemet_last_ok).strftime("%H:%M")
-        return f"📡 data from {cache_time} (cached)"
+        return f"  data from {cache_time} (cached)"
     return ""
 
 
@@ -681,9 +681,9 @@ def format_morning_report() -> str | None:
     now = datetime.now()
 
     # ── Header ────────────────────────────────────────────────────────────
-    lines.append("☀️ *Good morning — Zaragoza*")
+    lines.append("> Morning — Zaragoza")
     if station:
-        lines.append(f"📍 {station} · AEMET")
+        lines.append(f"  {station} · AEMET")
     cache_note = _cache_age_line()
     if cache_note:
         lines.append(cache_note)
@@ -695,8 +695,8 @@ def format_morning_report() -> str | None:
         cur = _parse_current(current)
         time_str = now.strftime("%H:%M")
         lines.append(
-            f"🌡 *Now* ({time_str}): {cur['temp']:.1f}°C · "
-            f"💧 {cur['humidity']:.0f}% · 💨 {cur['wind_speed']:.1f} km/h"
+            f"  Now ({time_str}): {cur['temp']:.1f}°C · "
+            f"{cur['humidity']:.0f}% · {cur['wind_speed']:.1f} km/h"
         )
         lines.append("")
 
@@ -716,7 +716,7 @@ def format_morning_report() -> str | None:
         t_max = _max_temp(temps)
 
         # Day header with sunrise-sunset
-        header = f"📅 *{weekday} {_format_date_short(fecha)}*"
+        header = f">> {weekday} {_format_date_short(fecha)}"
         if orto and ocaso:
             header += f" · {orto}-{ocaso}"
         lines.append(header)
@@ -732,7 +732,7 @@ def format_morning_report() -> str | None:
             h_val = _get_slot(humedad, h, "value", None)
             if h_val is not None:
                 try:
-                    parts.append(f"💧{int(float(h_val))}%")
+                    parts.append(f"{int(float(h_val))}%")
                 except (ValueError, TypeError):
                     pass
             v_dir = _get_slot(viento, h, "direccion", None)
@@ -742,7 +742,7 @@ def format_morning_report() -> str | None:
                     speed = float(v_speed)
                     if speed > 0:
                         compass = _wind_degrees_to_compass(v_dir or 0)
-                        parts.append(f"🌬{compass} {speed:.0f}")
+                        parts.append(f"{compass} {speed:.0f}")
                 except (ValueError, TypeError):
                     pass
             lines.append("  " + " · ".join(parts))
@@ -756,7 +756,7 @@ def format_morning_report() -> str | None:
                 continue
         spark = _temp_sparkline(temp_values, width=8)
         lines.append(
-            f"  🌡 {t_min:.0f}–{t_max:.0f}°C  {spark}"
+            f"  {t_min:.0f}–{t_max:.0f}°C  {spark}"
         )
         lines.append("")
 
@@ -764,12 +764,12 @@ def format_morning_report() -> str | None:
         if uvi_data:
             uvi_val = uvi_data["uvi"]
             uvi_lvl = uvi_data["level"]
-            lines.append(f"🔆 UV {uvi_val:.0f} ({uvi_lvl})")
+            lines.append(f"  UV {uvi_val:.0f} ({uvi_lvl})")
             lines.append("")
 
         # ── Warnings ──────────────────────────────────────────────────────
         if warnings:
-            lines.append("⚠️ *Active warnings*")
+            lines.append("  warnings")
             for w in warnings[:3]:  # max 3 in the brief
                 icon = w["level_icon"]
                 event = w["event"]
@@ -808,9 +808,9 @@ def format_ondemand() -> str | None:
     now = datetime.now()
 
     # ── Header ────────────────────────────────────────────────────────────
-    lines.append("🌤 *Zaragoza — AEMET*")
+    lines.append("> Zaragoza — AEMET")
     if station:
-        lines.append(f"📍 {station}")
+        lines.append(f"  {station}")
     cache_note = _cache_age_line()
     if cache_note:
         lines.append(cache_note)
@@ -821,8 +821,8 @@ def format_ondemand() -> str | None:
     if current:
         cur = _parse_current(current)
         lines.append(
-            f"🌡 *Now* ({now.strftime('%H:%M')}): {cur['temp']:.1f}°C · "
-            f"💧 {cur['humidity']:.0f}% · 💨 {cur['wind_speed']:.1f} km/h"
+            f"  Now ({now.strftime('%H:%M')}): {cur['temp']:.1f}°C · "
+            f"{cur['humidity']:.0f}% · {cur['wind_speed']:.1f} km/h"
         )
         lines.append("")
 
@@ -830,12 +830,12 @@ def format_ondemand() -> str | None:
     if uvi_data:
         uvi_val = uvi_data["uvi"]
         uvi_lvl = uvi_data["level"]
-        lines.append(f"🔆 UV {uvi_val:.0f} ({uvi_lvl})")
+        lines.append(f"  UV {uvi_val:.0f} ({uvi_lvl})")
         lines.append("")
 
     # ── Warnings ──────────────────────────────────────────────────────────
     if warnings:
-        lines.append("⚠️ *Avisos activos*")
+        lines.append("  warnings")
         for w in warnings:
             icon = w["level_icon"]
             event = w["event"]
@@ -871,9 +871,9 @@ def format_ondemand() -> str | None:
         t_max = _max_temp(temps)
 
         # Day header
-        day_label = f"📅 *{weekday} {_format_date_short(fecha)}*"
+        day_label = f">> {weekday} {_format_date_short(fecha)}"
         if orto and ocaso:
-            day_label += f" · 🌅{orto}  🌇{ocaso}"
+            day_label += f" · {orto}-{ocaso}"
         lines.append(day_label)
 
         # Row for each hourly entry
@@ -896,14 +896,14 @@ def format_ondemand() -> str | None:
             # Precipitation
             p_val = _get_slot(precip, h, "value", 0)
             try:
-                p_str = f"💧{int(float(p_val))}%"
+                p_str = f"{int(float(p_val))}%"
             except (ValueError, TypeError):
-                p_str = "💧0%"
+                p_str = "0%"
 
             # Humidity
             h_val = _get_slot(humedad, h, "value", None)
             try:
-                h_str = f"💦{int(float(h_val))}%" if h_val is not None else ""
+                h_str = f"{int(float(h_val))}%" if h_val is not None else ""
             except (ValueError, TypeError):
                 h_str = ""
 
@@ -914,7 +914,7 @@ def format_ondemand() -> str | None:
                 speed = float(v_speed) if v_speed is not None else 0
                 if speed > 0:
                     compass = _wind_degrees_to_compass(v_dir or 0)
-                    v_str = f"🌬{compass} {speed:.0f}"
+                    v_str = f"{compass} {speed:.0f}"
                 else:
                     v_str = ""
             except (ValueError, TypeError):
@@ -939,7 +939,7 @@ def format_ondemand() -> str | None:
             except (ValueError, TypeError):
                 continue
         spark = _temp_sparkline(temp_values, width=8)
-        lines.append(f"  🌡 {t_min:.0f}–{t_max:.0f}°C  {spark}")
+        lines.append(f"  {t_min:.0f}–{t_max:.0f}°C  {spark}")
 
     return "\n".join(lines)
 
