@@ -485,7 +485,7 @@ async def startup_notification(app: Application) -> None:
         note = "bot restarted (soft)"
 
     msg = (
-        f"! {icon} *pi02w Hub*\n"
+        f"> {icon} *pi02w Hub*\n"
         f"  {now}\n"
         f"  uptime: {uptime_h:.1f}h  ·  {note}"
     )
@@ -1840,7 +1840,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     session["history"] = []
     session["form"] = {}
     await update.message.reply_text(
-        "🤖 *pi02w Hub*\nSelect an option:",
+        "> *pi02w Hub*\nSelect an option:",
         parse_mode="Markdown",
         reply_markup=MENU_KEYBOARD,
     )
