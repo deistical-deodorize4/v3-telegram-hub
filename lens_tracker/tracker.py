@@ -68,7 +68,7 @@ def start_session(path: Path) -> tuple[bool, str]:
         return False, "Already wearing lenses. Send `out` first."
     d["session_start"] = datetime.now().isoformat(timespec="minutes")
     _save(path)
-    return True, f"Started at {datetime.now().strftime('%H:%M')}"
+    return True, f"On since {date.today().strftime('%d %b')}"
 
 
 def stop_session(path: Path) -> tuple[bool, str, timedelta | None]:
