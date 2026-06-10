@@ -499,14 +499,19 @@ def _temp_sparkline(values: list[float], width: int = 8) -> str:
         return ""
 
     # If we have more values than width, sample evenly
-    if len(values) > width:
-        step = len(values) / width
+    n = len(values)
+    if n >= width:
+        step = n / width
         sampled = [values[int(i * step)] for i in range(width)]
     else:
-        sampled = values
-        # Pad if fewer
-        while len(sampled) < width:
-            sampled.append(sampled[-1] if sampled else 0)
+        # Linear interpolation to avoid misleading flat tail
+        sampled = []
+        for i in range(width):
+            pos = (i / (width - 1)) * (n - 1)
+            lo = int(pos)
+            hi = min(lo + 1, n - 1)
+            frac = pos - lo
+            sampled.append(values[lo] * (1 - frac) + values[hi] * frac)
 
     mn = min(sampled)
     mx = max(sampled)
@@ -710,28 +715,37 @@ def format_morning_report() -> str | None:
         t_min = _min_temp(temps)
         t_max = _max_temp(temps)
 
-        # Day header with sunrise/sunset
+        # Day header with sunrise-sunset
         header = f"📅 *{weekday} {_format_date_short(fecha)}*"
         if orto and ocaso:
-            header += f" · 🌅{orto}  🌇{ocaso}"
+            header += f" · {orto}-{ocaso}"
         lines.append(header)
 
-        # Morning / afternoon / evening slots
-        slots = {"Morning": 9, "Afternoon": 14, "Evening": 20}
-        for label, h in slots.items():
+        # +5h and +9h from now
+        now_hour = now.hour
+        for label, offset in [("+5h", 5), ("+9h", 9)]:
+            h = (now_hour + offset) % 24
             t = _get_slot(temps, h)
-            s = _get_slot_str(sky, h, "value")
-            p = int(_get_slot(precip, h, "value", 0))
-            v = _get_slot(viento, h, "direccion", 0)
-            if t is not None:
+            if t is None:
+                continue
+            parts = [f"▸ {label} ({h:02d}:00)", f"{float(t):.0f}°C"]
+            h_val = _get_slot(humedad, h, "value", None)
+            if h_val is not None:
                 try:
-                    compass = _wind_degrees_to_compass(float(v))
+                    parts.append(f"💧{int(float(h_val))}%")
                 except (ValueError, TypeError):
-                    compass = ""
-                sky_short = _sky_short(s)
-                lines.append(
-                    f"  ▸ {h:02d}h  {float(t):.0f}°C · {sky_short} · 💧{p}% {compass}"
-                )
+                    pass
+            v_dir = _get_slot(viento, h, "direccion", None)
+            v_speed = _get_slot(viento, h, "velocidad", None)
+            if v_speed is not None:
+                try:
+                    speed = float(v_speed)
+                    if speed > 0:
+                        compass = _wind_degrees_to_compass(v_dir or 0)
+                        parts.append(f"🌬{compass} {speed:.0f}")
+                except (ValueError, TypeError):
+                    pass
+            lines.append("  " + " · ".join(parts))
 
         # Min/max + sparkline
         temp_values = []

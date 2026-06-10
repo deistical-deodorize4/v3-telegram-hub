@@ -306,9 +306,9 @@ def format_reminder(r: Reminder) -> str:
     """Pretty format for confirmation."""
     day = r.dt.strftime("%A").capitalize()
     return (
-        f"⏰ *Reminder set*\n"
-        f"📝 {r.message}\n"
-        f"🕐 {day} {r.dt.strftime('%d-%m at %H:%M')}"
+        f"> Reminder\n"
+        f"  {r.message}\n"
+        f"  {day} {r.dt.strftime('%d-%m')}  {r.dt.strftime('%H:%M')}"
     )
 
 

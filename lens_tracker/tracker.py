@@ -30,7 +30,7 @@ def _save(path: Path) -> None:
 def status(path: Path) -> str:
     d = _load(path)
     now = datetime.now()
-    lines = ["👁 *Lens Tracker*", "───"]
+    lines = ["> Lenses"]
 
     pair = d.get("pair_start")
     if pair:
@@ -38,27 +38,22 @@ def status(path: Path) -> str:
         days_elapsed = (now.date() - pd).days
         remaining = _LENS_DAYS - days_elapsed
         if remaining > 0:
-            lines.append(f"📅 Pair: {days_elapsed}d old ({remaining}d left)")
+            lines.append(f"  pair     {days_elapsed}d old ({remaining}d left)")
         else:
-            lines.append(f"⚠️ *Pair is {days_elapsed - _LENS_DAYS}d overdue!*")
+            lines.append(f"  pair     {days_elapsed - _LENS_DAYS}d overdue!")
     else:
-        lines.append("📅 No fresh pair started yet")
+        lines.append("  pair     none")
 
     ss = d.get("session_start")
     if ss:
         sd = datetime.fromisoformat(ss)
         delta = now - sd
-        h, rem = divmod(int(delta.total_seconds()), 3600)
-        m = rem // 60
-        lines.append(f"👁 Wearing since {sd.strftime('%d %b')} ({delta.days}d)")
-        lines.append("")
-        lines.append("Send `out` to stop, `new` for fresh pair.")
+        lines.append(f"  wearing  since {sd.strftime('%d %b')} ({delta.days}d)")
     else:
-        lines.append("😴 Not wearing")
-        lines.append("")
-        lines.append("Send `in` to start, `new` for fresh pair.")
+        lines.append("  wearing  no")
 
-    lines.append("`/cancel` to exit")
+    lines.append("")
+    lines.append("  Send `in` / `out` / `new`")
     return "\n".join(lines)
 
 

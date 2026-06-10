@@ -154,14 +154,10 @@ def get_warnings() -> list[str]:
         limit = status["limit"]
         spent = status["spent"]
         if pct >= 100:
-            warnings.append(
-                f"🔴 *{cat}*: {spent:.2f}€ de {limit:.2f}€ ({pct:.0f}%) — ¡excedido!"
-            )
+            warnings.append(f"  {cat}  {spent:.0f}/{limit:.0f}€  exceeded")
         elif pct >= WARN_THRESHOLD:
             remaining = limit - spent
-            warnings.append(
-                f"🟡 *{cat}*: {spent:.2f}€ de {limit:.2f}€ ({pct:.0f}%) — quedan {remaining:.2f}€"
-            )
+            warnings.append(f"  {cat}  {spent:.0f}/{limit:.0f}€  {remaining:.0f}€ left")
     return warnings
 
 
@@ -173,11 +169,12 @@ def format_status() -> str:
     """Full budget status — all categories with bars."""
     all_status = check_all()
     if not all_status:
-        return "💸 *No budgets set.* Use `/budget category amount` to start."
+        return "> Budget Status\n  no budgets set"
 
-    lines = ["💰 *Budget Status*", "───", ""]
+    lines = ["> Budget Status"]
     total_limit = 0.0
     total_spent = 0.0
+    longest_cat = max((len(c) for c in all_status), default=0)
 
     for cat, s in all_status.items():
         limit = s["limit"]
@@ -186,19 +183,15 @@ def format_status() -> str:
         total_limit += limit
         total_spent += spent
 
-        # emoji bar (10 chars)
         filled = min(int(pct / 10), 10)
         bar = "█" * filled + "░" * (10 - filled)
-
-        icon = "🔴" if pct >= 100 else ("🟡" if pct >= WARN_THRESHOLD else "🟢")
-        lines.append(f"{icon} *{cat}*")
-        lines.append(f"   {bar}  {spent:.0f}/{limit:.0f}€ ({pct:.0f}%)")
+        tag = f"  {pct:.0f}% exceeded" if pct >= 100 else ""
+        lines.append(f"  {cat:<{longest_cat}}  {bar}  {spent:.0f}/{limit:.0f}€{tag}")
 
     if len(all_status) > 1:
         overall_pct = round((total_spent / total_limit) * 100, 1) if total_limit > 0 else 0
-        overall_icon = "🔴" if overall_pct >= 100 else ("🟡" if overall_pct >= WARN_THRESHOLD else "🟢")
-        lines.append("")
-        lines.append(f"{overall_icon} *Total*: {total_spent:.0f}/{total_limit:.0f}€ ({overall_pct:.0f}%)")
+        lines.append(f"  {'─' * (longest_cat + 30)}")
+        lines.append(f"  {'total':<{longest_cat}}  {total_spent:.0f}/{total_limit:.0f}€  ({overall_pct:.0f}%)")
 
     return "\n".join(lines)
 
@@ -213,11 +206,8 @@ def format_category_status(category: str) -> str | None:
     pct = s["percent"]
     filled = min(int(pct / 10), 10)
     bar = "█" * filled + "░" * (10 - filled)
-    icon = "🔴" if pct >= 100 else ("🟡" if pct >= WARN_THRESHOLD else "🟢")
-    return (
-        f"{icon} *{category}*\n"
-        f"   {bar}  {spent:.0f}/{limit:.0f}€ ({pct:.0f}%)"
-    )
+    tag = f"  {pct:.0f}% exceeded" if pct >= 100 else ""
+    return f"> {category}\n  {bar}  {spent:.0f}/{limit:.0f}€{tag}"
 
 
 def format_recap() -> str | None:
@@ -226,9 +216,10 @@ def format_recap() -> str | None:
     if not all_status:
         return None
 
-    lines = ["📊 *Monthly Budget Recap*", f"📅 {_current_month_display()}", "───", ""]
+    lines = [f"> Monthly Recap  {_current_month_display()}"]
     total_limit = 0.0
     total_spent = 0.0
+    longest_cat = max((len(c) for c in all_status), default=0)
 
     for cat, s in all_status.items():
         limit = s["limit"]
@@ -236,13 +227,16 @@ def format_recap() -> str | None:
         pct = s["percent"]
         total_limit += limit
         total_spent += spent
-        icon = "✅" if pct <= 100 else "⚠️"
         left = max(limit - spent, 0)
         over = max(spent - limit, 0)
-        detail = f"{left:.0f}€ restantes" if pct <= 100 else f"{over:.0f}€ por encima"
-        lines.append(f"{icon} *{cat}*  {spent:.0f}/{limit:.0f}€  ({detail})")
+        detail = f"{left:.0f}€ left" if pct <= 100 else f"{over:.0f}€ over"
+        filled = min(int(pct / 10), 10)
+        bar = "█" * filled + "░" * (10 - filled)
+        lines.append(f"  {cat:<{longest_cat}}  {bar}  {spent:.0f}/{limit:.0f}€  {detail}")
 
-    lines.append("")
-    overall_pct = round((total_spent / total_limit) * 100, 1) if total_limit > 0 else 0
-    lines.append(f"{'✅' if overall_pct <= 100 else '⚠️'} *Total*: {total_spent:.0f}/{total_limit:.0f}€")
+    if len(all_status) > 1:
+        overall_pct = round((total_spent / total_limit) * 100, 1) if total_limit > 0 else 0
+        lines.append(f"  {'─' * (longest_cat + 30)}")
+        lines.append(f"  {'total':<{longest_cat}}  {total_spent:.0f}/{total_limit:.0f}€  ({overall_pct:.0f}%)")
+
     return "\n".join(lines)

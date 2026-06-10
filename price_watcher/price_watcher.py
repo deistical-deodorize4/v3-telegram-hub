@@ -242,9 +242,8 @@ def format_ondemand(results: list[dict] | None = None) -> str:
     if results is None:
         results = check_all()
     if not results:
-        return "💰 *Price Watch*\n\nNo items in watchlist."
+        return "> Price Watch\n  no items"
 
-    # Count meaningful changes (same-currency comparisons only)
     changes_count = 0
     currency_flips = 0
     for r in results:
@@ -258,27 +257,24 @@ def format_ondemand(results: list[dict] | None = None) -> str:
         elif prev is not None and cur == pcur and abs(r["price"] - prev) > 0.01:
             changes_count += 1
 
-    lines = ["💰 *Price Watch*", "───", ""]
-    has_any = changes_count or currency_flips
-    if changes_count:
-        lines.append(f"🔔 {changes_count} change{'s' if changes_count != 1 else ''}")
-    if currency_flips:
-        lines.append(f"⚠️ {currency_flips} currency change{'s' if currency_flips != 1 else ''} (not comparable)")
-    if has_any:
-        lines.append("")
-    else:
-        lines.append("📊 All prices stable")
-        lines.append("")
+    lines = ["> Price Watch"]
+    if changes_count or currency_flips:
+        parts = []
+        if changes_count:
+            parts.append(f"{changes_count} change{'s' if changes_count != 1 else ''}")
+        if currency_flips:
+            parts.append(f"{currency_flips} currency change{'s' if currency_flips != 1 else ''}")
+        lines.append(f"  {', '.join(parts)}")
     by_item: dict[str, list[dict]] = {}
     for r in results:
         by_item.setdefault(r["item_name"], []).append(r)
 
+    lines.append("")
     for name, entries in by_item.items():
-        lines.append(f"📦 *{name}*")
+        lines.append(f"  {name}")
         for e in entries:
-            icon = "✅" if e.get("name_matched") else "⚠️"
             if e["error"]:
-                lines.append(f"  {icon} {e['site']}: ❌ *broken link*")
+                lines.append(f"    {e['site']}  broken link")
             else:
                 curr = _price_str(e["price"], e["currency"])
                 prev = e.get("previous_price")
@@ -287,32 +283,28 @@ def format_ondemand(results: list[dict] | None = None) -> str:
                 if prev is not None and pcur == cur and abs(e["price"] - prev) > 0.01:
                     arrow = "↑" if e["price"] > prev else "↓"
                     lines.append(
-                        f"  {icon} {e['site']}: *{curr}* {arrow} "
-                        f"(was {_price_str(prev, pcur or '?')})"
+                        f"    {e['site']:<10} {curr}  {arrow}  from {_price_str(prev, pcur)}"
                     )
                 elif prev is not None and pcur != cur:
                     lines.append(
-                        f"  {icon} {e['site']}: *{curr}* ⚠️ currency changed "
-                        f"(was {_price_str(prev, pcur)})"
+                        f"    {e['site']:<10} {curr}  currency changed (was {_price_str(prev, pcur)})"
                     )
                 else:
-                    lines.append(f"  {icon} {e['site']}: *{curr}*")
-        lines.append("")
+                    lines.append(f"    {e['site']:<10} {curr}")
     return "\n".join(lines)
 
 
 def format_alerts(changes: list[dict]) -> str | None:
     if not changes:
         return None
-    lines = ["🔔 *Price Alert*", "───", ""]
+    lines = ["> Price Alert"]
     for c in changes:
-        direction = "⬆️" if c["change"] == "up" else "⬇️"
         lines.append(
-            f"📦 {c['item_name']} ({c['site']})\n"
-            f"   {direction} {_price_str(c['price'], c['currency'])} "
-            f"({c['diff']:+.2f} {c['currency']})"
+            f"  {c['item_name']} ({c['site']})"
         )
-        lines.append("")
+        lines.append(
+            f"    {_price_str(c['price'], c['currency'])}  ({c['diff']:+.2f} {c['currency']})"
+        )
     return "\n".join(lines)
 
 

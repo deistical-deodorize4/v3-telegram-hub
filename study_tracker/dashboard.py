@@ -157,8 +157,8 @@ def week_summary(year_week: str | None = None) -> str | None:
 
     if not filtered:
         if year_week:
-            return f"📊 No data for week {year_week}."
-        return "📊 No study data this week yet."
+            return f"> Week {year_week}\n  no data"
+        return "> Week\n  no data"
 
     n = len(filtered)
     total_hours = sum(r["hours"] for r in filtered)
@@ -167,14 +167,12 @@ def week_summary(year_week: str | None = None) -> str | None:
     avg_energy = sum(r["energy"] for r in filtered) / n
 
     lines = [
-        f"📊 *Week {target_week}* ({target_year})",
-        "───",
-        "",
-        f"📚 Sessions:  {n}",
-        f"⏱ Hours:      {total_hours:.1f}h",
-        f"📖 Units:      {len(units)} ({', '.join(str(u) for u in units)})",
-        f"⭐ Avg rating: {avg_rating:.1f}/10",
-        f"⚡ Avg energy: {avg_energy:.1f}/10",
+        f"> Week {target_week}",
+        f"  sessions  {n}",
+        f"  hours     {total_hours:.1f}h",
+        f"  units     {', '.join(str(u) for u in units)}",
+        f"  rating    {avg_rating:.1f}/10",
+        f"  energy    {avg_energy:.1f}/10",
     ]
     return "\n".join(lines)
 
@@ -200,48 +198,16 @@ def unit_coverage() -> str | None:
     covered_set = set(covered)
     gaps = sorted(all_units - covered_set)
 
-    lines = ["📖 *Unit Coverage*", "───", ""]
-
-    # Show covered units in groups of 10
-    covered_strs = [str(u) for u in covered]
-    # Compact: wrap at ~20 chars
-    chunks = []
-    chunk = []
-    for s in covered_strs:
-        chunk.append(s)
-        if len(", ".join(chunk)) > 24:
-            chunks.append(chunk[:-1])
-            chunk = [s]
-    if chunk:
-        chunks.append(chunk)
-
-    lines.append("*Covered:*")
-    for ch in chunks:
-        lines.append("  " + ", ".join(ch))
-
+    lines = ["> Unit Coverage"]
+    covered_str = ", ".join(str(u) for u in covered)
     if gaps:
-        lines.append("")
-        lines.append("*Gaps:*")
-        gap_strs = [str(g) for g in gaps]
-        chunks = []
-        chunk = []
-        for s in gap_strs:
-            chunk.append(s)
-            if len(", ".join(chunk)) > 24:
-                chunks.append(chunk[:-1])
-                chunk = [s]
-        if chunk:
-            chunks.append(chunk)
-        for ch in chunks:
-            lines.append("  " + ", ".join(ch))
-
-        # Next suggested unit
-        next_unit = gaps[0]
-        lines.append("")
-        lines.append(f"👉 Next: *Unit {next_unit}*")
+        gap_str = ", ".join(str(g) for g in gaps)
+        lines.append(f"  covered   {covered_str}")
+        lines.append(f"  gaps      {gap_str}")
+        lines.append(f"  next      unit {gaps[0]}")
     else:
-        lines.append("")
-        lines.append("✅ All units covered!")
+        lines.append(f"  covered   {covered_str}")
+        lines.append("  all units covered")
 
     return "\n".join(lines)
 
@@ -286,40 +252,30 @@ def all_time_progress() -> str | None:
     for r in recent:
         flags = []
         if r["energy"] <= 4:
-            flags.append("⚡ low energy")
+            flags.append("low energy")
         if r["sleep"] <= 5:
-            flags.append("😴 little sleep")
+            flags.append("little sleep")
         if r["rating"] <= 4:
-            flags.append("⭐ low rating")
+            flags.append("low rating")
         if flags:
             burnout_flags += 1
-            burnout_reasons.append(f"  {r['date']}: {', '.join(flags)}")
+            burnout_reasons.append(f"  {r['date']}  {', '.join(flags)}")
 
     lines = [
-        "📈 *Study Progress*",
-        "───",
-        "",
-        f"📚 Total sessions:    {n}",
-        f"⏱ Total hours:       {total_hours:.1f}h",
-        f"📖 Units covered:     {len(units)}",
-        f"📅 Unique study days: {unique_days}",
-        f"📊 Avg session:       {avg_hours:.1f}h · rating {avg_rating:.1f}/10",
-        f"⚡ Avg energy:        {avg_energy:.1f}/10",
-        f"😴 Avg sleep:         {avg_sleep:.1f}h",
-        "",
-        f"🔥 Current streak:    {current_streak} days",
-        f"🏆 Longest streak:    {longest_streak} days",
-        "",
-        f"🌟 *Best Session* — Unit {best_unit} on {best_date}",
-        f"   Rating: {best_rating}/10",
+        "> Study Progress",
+        f"  sessions  {n}  ·  {total_hours:.1f}h total",
+        f"  units     {len(units)}  ·  {unique_days} days",
+        f"  avg       {avg_hours:.1f}h  ·  rating {avg_rating:.1f}/10",
+        f"  energy    {avg_energy:.1f}/10  ·  sleep {avg_sleep:.1f}h",
+        f"  streak    {current_streak}d current  ·  {longest_streak}d best",
+        f"  best      unit {best_unit} ({best_date})  ·  {best_rating}/10",
     ]
 
     # Burnout warning
     if burnout_flags >= 3:
         lines.append("")
-        lines.append("⚠️ *Burnout Risk*")
+        lines.append("> Burnout Risk")
         lines.extend(burnout_reasons)
-        lines.append("")
-        lines.append("💡 Consider a rest day or shorter sessions.")
+        lines.append("  consider a rest day")
 
     return "\n".join(lines)

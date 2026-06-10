@@ -441,9 +441,9 @@ async def reminder_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             await context.bot.send_message(
                 chat_id=ALLOWED_USER,
                 text=(
-                    f"⏰ *Reminder!*\n"
-                    f"📝 {r.message}\n"
-                    f"🕐 {day_name} {r.dt.strftime('%d-%m at %H:%M')}"
+                    f"> Reminder\n"
+                    f"  {r.message}\n"
+                    f"  {day_name} {r.dt.strftime('%d-%m')}  {r.dt.strftime('%H:%M')}"
                 ),
                 parse_mode="Markdown",
             )
@@ -581,7 +581,7 @@ def _get_session(user_id: int) -> dict[str, Any]:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
-        await update.message.reply_text("⛔ Unauthorized.")
+        await update.message.reply_text("! unauthorized")
         return
     _get_session(user_id)["mode"] = "menu"
     await update.message.reply_text(
@@ -595,7 +595,7 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Pull the current day's report on demand."""
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
-        await update.message.reply_text("⛔ Unauthorized.")
+        await update.message.reply_text("! unauthorized")
         return
 
     report = daily_stats.build_report()
@@ -624,16 +624,15 @@ async def streak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     cur, longest, dates = stdash.calc_streak()
     if cur == 0:
-        await update.message.reply_text("📚 No study data yet. Log your first session with *Study Log*!", parse_mode="Markdown")
+        await update.message.reply_text("> Streak\n  no data yet", parse_mode="Markdown")
         return
 
-    lines = ["🔥 *Study Streak*", "───", ""]
-    lines.append(f"Current:  **{cur}** day{'s' if cur != 1 else ''}")
-    lines.append(f"Longest:  **{longest}** day{'s' if longest != 1 else ''}")
+    lines = ["> Streak"]
+    lines.append(f"  current  {cur} day{'s' if cur != 1 else ''}")
+    lines.append(f"  longest  {longest} day{'s' if longest != 1 else ''}")
 
     if len(dates) <= 7:
-        lines.append("")
-        lines.append("_Days:_ " + ", ".join(dates[-7:]))
+        lines.append("  " + " · ".join(dates[-7:]))
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -649,7 +648,7 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if result:
         await update.message.reply_text(result, parse_mode="Markdown")
     else:
-        await update.message.reply_text("📚 No study data yet.", parse_mode="Markdown")
+        await update.message.reply_text("> Week\n  no data yet", parse_mode="Markdown")
 
 
 async def units_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -661,7 +660,7 @@ async def units_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if result:
         await update.message.reply_text(result, parse_mode="Markdown")
     else:
-        await update.message.reply_text("📚 No study data yet.", parse_mode="Markdown")
+        await update.message.reply_text("> Unit Coverage\n  no data yet", parse_mode="Markdown")
 
 
 async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -673,7 +672,7 @@ async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if result:
         await update.message.reply_text(result, parse_mode="Markdown")
     else:
-        await update.message.reply_text("📚 No study data yet. Log your first session with *Study Log*!", parse_mode="Markdown")
+        await update.message.reply_text("> Study Progress\n  no data yet", parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -685,7 +684,7 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Handle /budget: set, show, remove budget limits."""
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
-        await update.message.reply_text("⛔ Unauthorized.")
+        await update.message.reply_text("! unauthorized")
         return
 
     args: list[str] = context.args if context.args else []
@@ -700,9 +699,9 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if text.lower().startswith("rm "):
         cat = text[3:].strip()
         if bgt.remove_budget(cat):
-            await update.message.reply_text(f"✅ Removed budget for *{cat}*.", parse_mode="Markdown")
+            await update.message.reply_text(f"> {cat}\n  removed", parse_mode="Markdown")
         else:
-            await update.message.reply_text(f"⚠️ No budget set for *{cat}*.", parse_mode="Markdown")
+            await update.message.reply_text(f"> {cat}\n  no budget set", parse_mode="Markdown")
         return
 
     # /budget <category> <amount>  — or just /budget <category> to show one
@@ -717,11 +716,11 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             bgt.set_budget(category, amount)
             status = bgt.format_category_status(category)
             await update.message.reply_text(
-                f"✅ Budget set!\n{status}",
+                f"> {category}\n  set to {amount:.0f}€\n{status}",
                 parse_mode="Markdown",
             )
         except ValueError:
-            await update.message.reply_text("⚠️ Amount must be a positive number (e.g. `/budget food 300`).", parse_mode="Markdown")
+            await update.message.reply_text("! amount must be positive", parse_mode="Markdown")
         return
 
     # Just category name → show that category
@@ -729,7 +728,7 @@ async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if status:
         await update.message.reply_text(status, parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"⚠️ No budget set for *{category}*. Use `/budget {category} <amount>` to set one.", parse_mode="Markdown")
+        await update.message.reply_text(f"> {category}\n  no budget set", parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -786,7 +785,7 @@ async def price_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if session["mode"] == "price_edit":
         session["mode"] = "menu"
         session["form"] = {}
-        await update.message.reply_text("✅ Done editing.", reply_markup=MENU_KEYBOARD)
+        await update.message.reply_text("> done", reply_markup=MENU_KEYBOARD)
         return
 
     if session["mode"] != "price_add" or form.get("waiting_for") != "url":
@@ -817,7 +816,7 @@ async def price_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     session = _get_session(user_id)
     session["mode"] = "menu"
     session["form"] = {}
-    await update.message.reply_text("❌ Cancelled.", reply_markup=MENU_KEYBOARD)
+    await update.message.reply_text("> cancelled", reply_markup=MENU_KEYBOARD)
 
 
 async def wishlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -843,14 +842,14 @@ async def impulse_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         wish_id = data.replace("impulse_yes_", "")
         w = ibw.get_wish_by_id(wish_id)
         ibw.mark_kept(wish_id)
-        name = f" *{w.text}*" if w else ""
-        await query.edit_message_text(f"✅ Go for it{name}! 🎉")
+        name = f" {w.text}" if w else ""
+        await query.edit_message_text(f"> {name}\n  go for it")
     elif data.startswith("impulse_no_"):
         wish_id = data.replace("impulse_no_", "")
         w = ibw.get_wish_by_id(wish_id)
         ibw.mark_dropped(wish_id)
-        name = f" *{w.text}*" if w else ""
-        await query.edit_message_text(f"❌ Well done{name} — impulse dodged.")
+        name = f" {w.text}" if w else ""
+        await query.edit_message_text(f"> {name}\n  dropped")
 
 
 async def price_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -882,7 +881,7 @@ async def price_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     session = _get_session(user_id)
     session["mode"] = "price_menu"
-    await update.message.reply_text("⏳ Checking prices…")
+    await update.message.reply_text("~ checking prices")
     try:
         results = pw.check_all()
         report = pw.format_ondemand(results)
@@ -892,7 +891,7 @@ async def price_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if alert:
             await update.message.reply_text(alert, parse_mode="Markdown")
     except Exception as exc:
-        await update.message.reply_text(f"❌ Error: {exc}")
+        await update.message.reply_text(f"! {exc}")
 
 
 async def price_test_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1006,7 +1005,7 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
         if cmd in ("d", "done"):
             session["mode"] = "menu"
             session["form"] = {}
-            await update.message.reply_text("✅ Done.", reply_markup=MENU_KEYBOARD)
+            await update.message.reply_text("> done", reply_markup=MENU_KEYBOARD)
             return
 
         await update.message.reply_text("Send A, R <num>, or D.")
@@ -1066,7 +1065,7 @@ async def price_handle_edit_message(update: Update, text: str) -> None:
                     "currency": pending["currency"],
                 })
                 _save_items(items)
-                await update.message.reply_text("✅ URL added! Saving…")
+                await update.message.reply_text("> saved")
 
                 # Show updated product view
                 item = items[item_idx]
@@ -1287,7 +1286,7 @@ async def price_handle_add_message(update: Update, text: str) -> bool:
         else:
             session["mode"] = "menu"
             session["form"] = {}
-            await update.message.reply_text("❌ Not saved.", reply_markup=MENU_KEYBOARD)
+            await update.message.reply_text("> not saved", reply_markup=MENU_KEYBOARD)
         return True
 
     return False
@@ -1364,7 +1363,7 @@ async def price_handle_message(update: Update, text: str) -> None:
             else:
                 session["mode"] = "menu"
                 session["form"] = {}
-                await update.message.reply_text("❌ Not removed.", reply_markup=MENU_KEYBOARD)
+                await update.message.reply_text("> not removed", reply_markup=MENU_KEYBOARD)
             return
 
         # Otherwise it's a number pick
@@ -1486,7 +1485,7 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
         session["form"] = {}
         return
 
-    status_msg = await update.message.reply_text("⏳ Downloading…")
+        status_msg = await update.message.reply_text("~ downloading")
     try:
         file = await context.bot.get_file(doc.file_id)
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
@@ -1513,7 +1512,7 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
-        await update.message.reply_text("⛔ Unauthorized.")
+        await update.message.reply_text("! unauthorized")
         return
 
     text: str = update.message.text  # type: ignore[assignment]
@@ -1522,7 +1521,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # ------- Weather (AEMET) -------
     if text == "🌤 Weather":
-        await update.message.reply_text("⏳ Fetching AEMET data…")
+        await update.message.reply_text("~ fetching aemet data")
         try:
             report = weather_aemet.format_ondemand()
             if report:
@@ -1532,7 +1531,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "❌ Could not fetch AEMET data. Check your API key and internet."
                 )
         except Exception as exc:
-            await update.message.reply_text(f"❌ AEMET error: {exc}")
+            await update.message.reply_text(f"! aemet error: {exc}")
         return
 
     # ------- Study Log -------
@@ -1592,7 +1591,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             session["mode"] = "menu"
             session["form"] = {}
             await update.message.reply_text(
-                f"✅ Logged: Unit {f['unit']} | {f['hours']}h | Rating {f['rating']}/10",
+                f"> Logged\n  unit {f['unit']}  ·  {f['hours']}h  ·  rating {f['rating']}/10",
                 reply_markup=MENU_KEYBOARD,
             )
         return
@@ -1641,7 +1640,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             session["mode"] = "menu"
             session["form"] = {}
 
-            msg = f"✅ Logged: {f['category']} | {float(f['amount']):.2f}€ | {f['type']}"
+            msg = f"> Logged\n  {f['category']}  ·  {float(f['amount']):+.2f}€  ·  {f['type']}"
 
             # Check budget warning for this category
             warnings = bgt.get_warnings()
@@ -1662,7 +1661,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             report = sysmon.get_report()
             await update.message.reply_text(report)
         except Exception as exc:
-            await update.message.reply_text(f"Monitor error: {exc}")
+            await update.message.reply_text(f"! monitor: {exc}")
         return
 
     # ------- Print -------
@@ -1670,7 +1669,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["mode"] = "print"
         session["form"] = {}
         await update.message.reply_text(
-            "🖨 *Print a PDF*\n\nSend the PDF file to print.\n/cancel to cancel.",
+            "> Print\n  send a PDF file\n  /cancel to cancel",
             parse_mode="Markdown",
         )
         return
@@ -1693,12 +1692,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         report = pw.format_ondemand(results)
         msg = (
             f"{report}\n"
-            "───\n\n"
-            "➕ /priceadd     Add product\n"
-            "✏️ /priceedit    Edit product\n"
-            "❌ /priceremove  Remove product\n"
-            "🔍 /pricetest    Test a URL\n"
-            "📊 /pricereport  View report"
+            f"\n"
+            f"  /priceadd     add product\n"
+            f"  /priceedit    edit product\n"
+            f"  /priceremove  remove product\n"
+            f"  /pricetest    test a URL\n"
+            f"  /pricereport  view report"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
         return
@@ -1790,7 +1789,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         wish_id = session["form"].get("wish_id", "")
         w = ibw.get_wish_by_id(wish_id)
         if not w:
-            await update.message.reply_text("⚠️ Wish not found. Start again.")
+            await update.message.reply_text("! wish not found")
             session["mode"] = "menu"
             session["form"] = {}
             return
@@ -1845,34 +1844,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     reply_markup=MENU_KEYBOARD,
                 )
             else:
-                await update.message.reply_text("⚠️ Error saving evaluation.", reply_markup=MENU_KEYBOARD)
+                await update.message.reply_text("! error saving", reply_markup=MENU_KEYBOARD)
             return
 
     # ------- Commands -------
     if text == "📋 Commands":
         cmds = (
-            "📋 *Commands*\n───\n\n"
-            "`/start`      Hub menu\n"
-            "`/daily`      Daily stats report\n"
-            "`/monitor`    Live system monitor\n"
-            "`/cancel`     Cancel any flow\n\n"
-            "🔹 *Study*\n"
-            "`/streak`       Study streak\n"
-            "`/week`         Weekly summary\n"
-            "`/units`        Unit coverage\n"
-            "`/progress`     All-time progress\n\n"
-            "🔹 *Price Watch*\n"
-            "`/priceadd`     Add product\n"
-            "`/priceedit`    Edit product\n"
-            "`/priceremove`  Remove product\n"
-            "`/pricetest`    Test a URL\n"
-            "`/pricedone`    Finish URLs\n"
-            "`/pricereport`  View report\n\n"
-            "🔹 *Finance*\n"
-            "`/budget`       Show/set budget limits\n\n"
-            "🔹 *Other*\n"
-            "`/wishlist`   Impulse buy history\n"
-            "`/print`      Print a PDF file"
+            "> Commands\n\n"
+            "  /start       hub menu\n"
+            "  /daily       daily report\n"
+            "  /monitor     system monitor\n"
+            "  /cancel      cancel flow\n"
+            "\n"
+            "  Study:\n"
+            "  /streak      study streak\n"
+            "  /week        weekly summary\n"
+            "  /units       unit coverage\n"
+            "  /progress    all-time progress\n"
+            "\n"
+            "  Price Watch:\n"
+            "  /priceadd    add product\n"
+            "  /priceedit   edit product\n"
+            "  /priceremove remove product\n"
+            "  /pricetest   test a URL\n"
+            "  /pricedone   finish URLs\n"
+            "  /pricereport view report\n"
+            "\n"
+            "  Finance:\n"
+            "  /budget      budget limits\n"
+            "\n"
+            "  Other:\n"
+            "  /wishlist    impulse buy history\n"
+            "  /print       print a PDF"
         )
         await update.message.reply_text(cmds, parse_mode="Markdown")
         return
