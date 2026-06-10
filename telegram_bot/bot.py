@@ -1815,6 +1815,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /units       unit coverage\n"
             "  /progress    all-time progress\n"
             "\n"
+            ">> Finance\n"
+            "  /budget      budget limits\n"
+            "\n"
             ">> Price Watch\n"
             "  /priceadd    add product\n"
             "  /priceedit   edit product\n"
@@ -1823,11 +1826,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /pricedone   finish URLs\n"
             "  /pricereport view report\n"
             "\n"
-            ">> Finance\n"
-            "  /budget      budget limits\n"
+            ">> Wishes\n"
+            "  /wishlist    impulse buy history\n"
             "\n"
             ">> Tools\n"
-            "  /wishlist    impulse buy history\n"
             "  /print       print a PDF"
         )
         await update.message.reply_text(cmds, parse_mode="Markdown")
