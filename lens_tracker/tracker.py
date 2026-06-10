@@ -50,7 +50,11 @@ def status(path: Path) -> str:
         delta = now - sd
         h, rem = divmod(int(delta.total_seconds()), 3600)
         m = rem // 60
-        lines.append(f"👁 Wearing since {sd.strftime('%H:%M')} ({h}h {m}m)")
+        since_str = sd.strftime('%d-%m at %H:%M')
+        if delta.days:
+            lines.append(f"👁 Wearing since {since_str} ({delta.days}d {h}h)")
+        else:
+            lines.append(f"👁 Wearing since {since_str} ({h}h {m}m)")
         lines.append("")
         lines.append("Send `out` to stop, `new` for fresh pair.")
     else:
