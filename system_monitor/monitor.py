@@ -185,11 +185,11 @@ def _bar(value: float, width: int = 5) -> str:
 
 
 def render(data: SystemSnapshot) -> str:
-    lines = ["=" * 60]
+    lines = ["=" * 40]
     lines.append(f"SYS MONITOR - {data.time.datetime}")
     uptime = data.time.uptime_hours
     lines.append(f"UPTIME       : {uptime // 3600}h {(uptime % 3600) // 60}m")
-    lines.append("=" * 60)
+    lines.append("=" * 40)
 
     if data.cpu:
         c = data.cpu
