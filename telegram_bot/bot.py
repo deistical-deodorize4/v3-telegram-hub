@@ -478,14 +478,14 @@ async def startup_notification(app: Application) -> None:
     uptime_h = _get_uptime()
 
     if uptime_h < 0.17:  # less than ~10 minutes
-        icon = "!"
+        icon = "(hard resetted)"
         note = "possible power outage/restart"
     else:
-        icon = "i"
-        note = "bot restarted (soft)"
+        icon = "(Pi02w)"
+        note = "bot restarted (softly)"
 
     msg = (
-        f"> {icon} *pi02w Hub*\n"
+        f"> {icon} *Hub*\n"
         f"  {now}\n"
         f"  uptime: {uptime_h:.1f}h  ·  {note}"
     )
