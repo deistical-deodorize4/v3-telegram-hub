@@ -277,39 +277,6 @@ def _seconds_until_09_madrid() -> float:
     return _seconds_until(9, 0)
 
 
-def _check_open_meteo() -> str:
-    """Return ✅, ❌, or ⏭️ for Open-Meteo."""
-    try:
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": cfg.WEATHER_LAT,
-            "longitude": cfg.WEATHER_LON,
-            "hourly": "temperature_2m",
-            "forecast_days": 1,
-            "timezone": "Europe/Madrid",
-        }
-        resp = requests.get(url, params=params, timeout=10)
-        return "✅" if resp.status_code == 200 else "❌"
-    except Exception:
-        return "❌"
-
-
-def _check_aemet() -> str:
-    """Return ✅, ❌, or ⏭️ for AEMET (skipped if no key)."""
-    if not cfg.AEMET_API_KEY:
-        return "⏭️"
-    try:
-        # Request observation data for Zaragoza Aeropuerto station
-        url = (
-            f"https://opendata.aemet.es/opendata/api/observacion/convencional"
-            f"/datos/estacion/{cfg.AEMET_STATION}"
-        )
-        resp = requests.get(url, params={"api_key": cfg.AEMET_API_KEY}, timeout=10)
-        return "✅" if resp.status_code == 200 else "❌"
-    except Exception:
-        return "❌"
-
-
 def _read_sd_wear() -> dict | None:
     """Read SD card wear metrics.
 
@@ -559,11 +526,11 @@ FINANCE_STEPS = [
 # ---------------------------------------------------------------------------
 MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
-        ["🌤 Weather", "📚 Study Log"],
-        ["💰 Finance Log", "🖥 Monitor"],
-        ["📈 Price Watch", "⏰ Reminder"],
-        ["💸 Impulse Buy", "📋 Commands"],
-        ["🖨 Print", "👁 Lenses"],
+        ["🌤 Weather", "🖨 Print"],
+        ["💰 Finance Log", "📚 Study Log"],
+        ["📈 Price Watch", "💸 Impulse Buy"],
+        ["📢 Reminder", "👁 Lenses"],
+        ["🕵️ Monitor", "📋 Commands"],
     ],
     resize_keyboard=True,
 )
@@ -585,7 +552,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     _get_session(user_id)["mode"] = "menu"
     await update.message.reply_text(
-        "🤖 *pi02w Hub*\nSelect an option:",
+        "> *pi02w Hub*\nSelect an option:",
         parse_mode="Markdown",
         reply_markup=MENU_KEYBOARD,
     )
