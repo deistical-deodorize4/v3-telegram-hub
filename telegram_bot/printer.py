@@ -79,12 +79,15 @@ def print_pdf(path: Path, addr: str) -> tuple[bool, str]:
     host_label = f"{addr} ({ip})" if addr != ip else ip
     try:
         with socket.create_connection((ip, _PRINTER_PORT), timeout=_SEND_TIMEOUT) as sock:
+            # PJL wrapper — tells the printer this is PDF, not raw text
+            sock.sendall(b"\x1b%-12345X@PJL JOB\n@PJL ENTER LANGUAGE=PDF\n")
             with open(path, "rb") as f:
                 while True:
                     chunk = f.read(_CHUNK_SIZE)
                     if not chunk:
                         break
                     sock.sendall(chunk)
+            sock.sendall(b"\n@PJL EOJ\n\x1b%-12345X")
         log.info("Sent %s (%d B) to %s", path.name, size, host_label)
         return True, f"Sent to printer ({path.name})"
     except socket.timeout:
