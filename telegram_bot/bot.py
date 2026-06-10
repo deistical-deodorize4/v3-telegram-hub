@@ -1463,19 +1463,7 @@ async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-async def printeron_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send Wake-on-LAN magic packet to turn the printer on."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        return
-    if not cfg.PRINTER_MAC:
-        await update.message.reply_text(
-            "No MAC configured. Set PRINTER_MAC in .env"
-        )
-        return
-    await update.message.reply_text("⏳ Sending wake signal…")
-    success, msg = prn.wake_on_lan(cfg.PRINTER_MAC)
-    await update.message.reply_text(f"{'✅' if success else '❌'} {msg}")
+
 
 
 async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1933,7 +1921,6 @@ def main() -> None:
     app.add_handler(CommandHandler("pricereport", price_report))
     app.add_handler(CommandHandler("wishlist", wishlist_command))
     app.add_handler(CommandHandler("print", print_command))
-    app.add_handler(CommandHandler("printeron", printeron_command))
     app.add_handler(CallbackQueryHandler(impulse_callback, pattern="^impulse_"))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_print_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

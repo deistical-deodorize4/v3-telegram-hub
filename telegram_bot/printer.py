@@ -8,7 +8,6 @@ from pathlib import Path
 log = logging.getLogger("aihub.printer")
 
 _PRINTER_PORT = 9100
-_WOL_PORT = 9
 _SEND_TIMEOUT = 30
 _CHUNK_SIZE = 65536
 
@@ -132,30 +131,3 @@ def print_pdf(path: Path, addr: str, printer_name: str = "") -> tuple[bool, str]
 
     return _print_via_raw(path, ip)
 
-
-def _mac_to_bytes(mac: str) -> bytes | None:
-    cleaned = mac.replace(":", "").replace("-", "").replace(".", "").strip()
-    if not cleaned:
-        return None
-    try:
-        return bytes.fromhex(cleaned)
-    except ValueError:
-        return None
-
-
-def wake_on_lan(mac: str) -> tuple[bool, str]:
-    mac_bytes = _mac_to_bytes(mac)
-    if not mac_bytes or len(mac_bytes) != 6:
-        return False, "Invalid MAC address — use format AA:BB:CC:DD:EE:FF"
-
-    magic = b"\xff" * 6 + mac_bytes * 16
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            sock.settimeout(_SEND_TIMEOUT)
-            sock.sendto(magic, ("255.255.255.255", _WOL_PORT))
-        log.info("WoL magic packet sent to %s", mac)
-        return True, "Printer wake signal sent"
-    except OSError as e:
-        return False, f"Failed to send WoL: {e}"
