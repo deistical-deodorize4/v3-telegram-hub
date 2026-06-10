@@ -37,6 +37,7 @@ from reminder import reminder as rmd
 from impulse_buy import wish as ibw
 from finance_tracker import budget as bgt
 from study_tracker import dashboard as stdash
+from telegram_bot import printer as prn
 from utils import log, setup_logging
 
 # ---------------------------------------------------------------------------
@@ -561,6 +562,7 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
         ["💰 Finance Log", "🖥 Monitor"],
         ["📈 Price Watch", "⏰ Reminder"],
         ["💸 Impulse Buy", "📋 Commands"],
+        ["🖨 Print"],
     ],
     resize_keyboard=True,
 )
@@ -1404,6 +1406,69 @@ async def price_handle_message(update: Update, text: str) -> None:
         await price_handle_edit_message(update, text)
         return
 
+# ---------------------------------------------------------------------------
+# Printer
+# ---------------------------------------------------------------------------
+
+
+async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the print flow — bot will ask for a PDF."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+    session = _get_session(user_id)
+    session["mode"] = "print"
+    session["form"] = {}
+    await update.message.reply_text(
+        "🖨 *Print a PDF*\n\nSend the PDF file to print.\n/cancel to cancel.",
+        parse_mode="Markdown",
+    )
+
+
+async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Download a PDF and send it to the printer."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER:
+        return
+
+    session = _get_session(user_id)
+    if session.get("mode") != "print":
+        return
+
+    doc = update.message.document
+    if doc.mime_type != "application/pdf":
+        await update.message.reply_text("Only PDF files are supported.")
+        return
+    if doc.file_size and doc.file_size > 10 * 1024 * 1024:
+        await update.message.reply_text("File too large (max 10 MB).")
+        session["mode"] = "menu"
+        session["form"] = {}
+        return
+
+    status_msg = await update.message.reply_text("⏳ Downloading…")
+    try:
+        file = await context.bot.get_file(doc.file_id)
+        local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
+        await file.download_to_drive(local_path)
+
+        await status_msg.edit_text("⏳ Sending to printer…")
+        success, msg = prn.print_pdf(local_path, cfg.PRINTER_ADDR)
+
+        session["mode"] = "menu"
+        session["form"] = {}
+
+        if success:
+            await status_msg.edit_text(f"✅ {msg}")
+        else:
+            await status_msg.edit_text(f"❌ {msg}")
+
+        local_path.unlink(missing_ok=True)
+    except Exception as e:
+        session["mode"] = "menu"
+        session["form"] = {}
+        await status_msg.edit_text(f"❌ Error: {e}")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
@@ -1557,6 +1622,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(report)
         except Exception as exc:
             await update.message.reply_text(f"Monitor error: {exc}")
+        return
+
+    # ------- Print -------
+    if text in ("🖨 Print", "/print"):
+        session["mode"] = "print"
+        session["form"] = {}
+        await update.message.reply_text(
+            "🖨 *Print a PDF*\n\nSend the PDF file to print.\n/cancel to cancel.",
+            parse_mode="Markdown",
+        )
         return
 
     # ------- Price Watch sub-menu -------
@@ -1744,7 +1819,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "🔹 *Finance*\n"
             "`/budget`       Show/set budget limits\n\n"
             "🔹 *Other*\n"
-            "`/wishlist`   Impulse buy history"
+            "`/wishlist`   Impulse buy history\n"
+            "`/print`      Print a PDF file"
         )
         await update.message.reply_text(cmds, parse_mode="Markdown")
         return
@@ -1792,7 +1868,9 @@ def main() -> None:
     app.add_handler(CommandHandler("priceedit", price_edit_start))
     app.add_handler(CommandHandler("pricereport", price_report))
     app.add_handler(CommandHandler("wishlist", wishlist_command))
+    app.add_handler(CommandHandler("print", print_command))
     app.add_handler(CallbackQueryHandler(impulse_callback, pattern="^impulse_"))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_print_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # --- Schedule background jobs ---

@@ -91,6 +91,11 @@ AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoi
 AEMET_UVI_LOCALIDAD: str = "Zaragoza"      # Localidad name in UV index response
 
 # ---------------------------------------------------------------------------
+# Printer (raw TCP/JetDirect – no CUPS dependencies)
+# ---------------------------------------------------------------------------
+PRINTER_ADDR: str = os.environ.get("PRINTER_ADDR", "")
+
+# ---------------------------------------------------------------------------
 # Ensure essential directories exist
 # ---------------------------------------------------------------------------
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
