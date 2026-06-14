@@ -134,10 +134,6 @@ class DailyStats:
         # ---- Throttling ----
         throttled_events = [s for s in samples if s["throttled"] != "ok"]
 
-        # ---- Weather health checks ----
-        om_status = _check_open_meteo()
-        aemet_status = _check_aemet()
-
         # ---- Build report ----
         lines = []
         header = f"> Daily Report — {day}"
@@ -192,9 +188,6 @@ class DailyStats:
         if sd_wear:
             label = "lifetime" if sd_wear["type"] == "lifetime" else "since boot"
             lines.append(f"  SD Wear · {sd_wear['total_gb']}GB ({label})")
-
-        # Weather
-        lines.append(f"  Weather APIs · Open-Meteo {om_status} · AEMET {aemet_status}")
 
         # ---- Alerts section ----
         alerts = []
