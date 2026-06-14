@@ -150,6 +150,21 @@ _DAY_NAMES = {
     "sunday": 6, "sun": 6,
 }
 
+_MONTH_NAMES = {
+    "january": 1, "jan": 1, "enero": 1,
+    "february": 2, "feb": 2, "febrero": 2,
+    "march": 3, "mar": 3, "marzo": 3,
+    "april": 4, "apr": 4, "abril": 4,
+    "may": 5, "mayo": 5,
+    "june": 6, "jun": 6, "junio": 6,
+    "july": 7, "jul": 7, "julio": 7,
+    "august": 8, "aug": 8, "agosto": 8,
+    "september": 9, "sep": 9, "sept": 9, "septiembre": 9, "setiembre": 9,
+    "october": 10, "oct": 10, "octubre": 10,
+    "november": 11, "nov": 11, "noviembre": 11,
+    "december": 12, "dec": 12, "diciembre": 12,
+}
+
 _RELATIVE_PATTERNS = [
     (re.compile(r"in (\d+)\s*minutes?\b", re.I), "minutes"),
     (re.compile(r"in (\d+)\s*mins?\b", re.I), "minutes"),
@@ -236,6 +251,25 @@ def parse_datetime(text: str, tz) -> datetime | None:
         date_month = int(dm.group(2))
         text = text.replace(dm.group(0), "").strip()
         date_specified = True
+
+    # --- Extract a month-name date ---
+    if not date_specified:
+        _mn = "|".join(sorted(_MONTH_NAMES, key=len, reverse=True))
+        m = re.search(
+            r"(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s+)?\b(" + _mn + r")\b", text
+        )
+        if m:
+            d, mn = int(m.group(1)), _MONTH_NAMES[m.group(2)]
+            if 1 <= d <= 31:
+                date_specified, date_day, date_month = True, d, mn
+                text = text.replace(m.group(0), "").strip()
+        if not date_specified:
+            m = re.search(r"\b(" + _mn + r")\s+(\d{1,2})(?:st|nd|rd|th)?", text)
+            if m:
+                mn, d = _MONTH_NAMES[m.group(1)], int(m.group(2))
+                if 1 <= d <= 31:
+                    date_specified, date_day, date_month = True, d, mn
+                    text = text.replace(m.group(0), "").strip()
 
     # --- "tomorrow" flag ---
     tomorrow = False

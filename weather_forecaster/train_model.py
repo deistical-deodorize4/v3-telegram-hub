@@ -29,7 +29,6 @@ from config import (  # noqa: E402
     WEATHER_SAVED_MODEL_DIR,
     WEATHER_TFLITE,
     MODEL_DIR,
-    WEATHER_FEATURES,
     WEATHER_LOOK_BACK,
     WEATHER_TARGETS,
 )

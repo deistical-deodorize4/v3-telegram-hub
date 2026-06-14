@@ -1,6 +1,15 @@
+# Runtime
 python-telegram-bot[job-queue]>=21
-google-genai
-python-docx
 requests
 psutil
 python-dotenv
+joblib
+numpy
+ai-edge-litert
+
+# Training / export (optional — not needed on Pi)
+google-genai
+python-docx
+pandas
+scikit-learn
+tensorflow
