@@ -209,6 +209,13 @@ def _parse_time(text: str) -> tuple[int, int] | None:
         if 0 <= h <= 23:
             return h, 0
 
+    # Try plain 24-hour format: "21" → 21:00, "9" → 9:00
+    m = re.search(r"\b(\d{1,2})\b", text)
+    if m:
+        h = int(m.group(1))
+        if 0 <= h <= 24:
+            return h, 0
+
     return None
 
 
