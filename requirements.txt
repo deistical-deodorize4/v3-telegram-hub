@@ -1,15 +1,14 @@
-# Runtime
-python-telegram-bot[job-queue]>=21
-requests
-psutil
-python-dotenv
-joblib
-numpy
-ai-edge-litert
+# ── Runtime (install these on the Pi) ──
+#   pip install -r requirements-runtime.txt
+-r requirements-runtime.txt
 
-# Training / export (optional — not needed on Pi)
-google-genai
-python-docx
-pandas
-scikit-learn
-tensorflow
+# ── Training / export (optional, NOT needed on Pi) ──
+# These pull huge dependencies (tensorflow ~400MB+) and have no
+# pre-built wheels for armv6/armv7.  Only install on a dev machine.
+#   pip install -r requirements-training.txt
+#
+# google-genai
+# python-docx
+# pandas
+# scikit-learn
+# tensorflow
