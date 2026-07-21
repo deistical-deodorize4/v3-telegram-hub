@@ -310,16 +310,20 @@ async def sample_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Build and send the morning weather brief (09:00), then re-schedule."""
-    report = weather_aemet.format_morning_report()
-    if report:
-        await context.bot.send_message(
-            chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
-        )
-    else:
-        await context.bot.send_message(
-            chat_id=ALLOWED_USER,
-            text="> Morning\n  aemet data unavailable",
-        )
+    try:
+        report = weather_aemet.format_morning_report()
+        if report:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER,
+                text="> Morning\n  aemet data unavailable",
+            )
+    except Exception as exc:
+        log.error("Morning report send failed: %s", exc)
+
     # Check for impulse buy wishes due for re-evaluation
     try:
         due = ibw.get_due_for_recheck()
@@ -341,34 +345,38 @@ async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             log.info("Impulse re-check: asked about %d wish(es)", len(due))
     except Exception as exc:
         log.error("Impulse re-check failed: %s", exc)
-    # Re-schedule for tomorrow
-    _schedule_morning_report(context.job_queue)
+    finally:
+        # Re-schedule for tomorrow — always, even if sending failed
+        _schedule_morning_report(context.job_queue)
 
 
 async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Build and send the daily tl;dr, then re-schedule for tomorrow."""
-    report = daily_stats.build_report()
-    if report:
-        await context.bot.send_message(
-            chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
-        )
-    else:
-        await context.bot.send_message(
-            chat_id=ALLOWED_USER,
-            text="> Daily Report\n  no data collected today (bot just started).",
-        )
-
-    # Month-end budget recap
-    tomorrow = date.today() + timedelta(days=1)
-    if tomorrow.day == 1:
-        recap = bgt.format_recap()
-        if recap:
+    try:
+        report = daily_stats.build_report()
+        if report:
             await context.bot.send_message(
-                chat_id=ALLOWED_USER, text=recap, parse_mode="Markdown",
+                chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER,
+                text="> Daily Report\n  no data collected today (bot just started).",
             )
 
-    # Re-schedule next day's report
-    _schedule_daily_report(context.job_queue)
+        # Month-end budget recap
+        tomorrow = date.today() + timedelta(days=1)
+        if tomorrow.day == 1:
+            recap = bgt.format_recap()
+            if recap:
+                await context.bot.send_message(
+                    chat_id=ALLOWED_USER, text=recap, parse_mode="Markdown",
+                )
+    except Exception as exc:
+        log.error("Daily report send failed: %s", exc)
+    finally:
+        # Re-schedule next day's report — always, even if sending failed
+        _schedule_daily_report(context.job_queue)
 
 
 async def price_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
