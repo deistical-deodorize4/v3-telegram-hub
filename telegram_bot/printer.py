@@ -67,11 +67,19 @@ def _lp_available() -> bool:
         return False
 
 
-def _print_via_lp(path: Path, printer_name: str) -> tuple[bool, str]:
+def _print_via_lp(path: Path, printer_name: str,
+                  color: bool = True, duplex: bool = False) -> tuple[bool, str]:
     try:
+        cmd = ["lp", "-d", printer_name]
+        if not color:
+            cmd.extend(["-o", "ColorModel=Gray"])
+        if duplex:
+            cmd.extend(["-o", "sides=two-sided-long-edge"])
+        else:
+            cmd.extend(["-o", "sides=one-sided"])
+        cmd.append(str(path))
         result = subprocess.run(
-            ["lp", "-d", printer_name, str(path)],
-            capture_output=True, text=True, timeout=_SEND_TIMEOUT,
+            cmd, capture_output=True, text=True, timeout=_SEND_TIMEOUT,
         )
         if result.returncode == 0:
             log.info("Printed %s via CUPS queue %s", path.name, printer_name)
@@ -109,7 +117,8 @@ def _print_via_raw(path: Path, ip: str) -> tuple[bool, str]:
         return False, f"Network error: {e}"
 
 
-def print_pdf(path: Path, addr: str, printer_name: str = "") -> tuple[bool, str]:
+def print_pdf(path: Path, addr: str, printer_name: str = "",
+              color: bool = True, duplex: bool = False) -> tuple[bool, str]:
     if not path.is_file():
         return False, "File not found"
     size = path.stat().st_size
@@ -119,7 +128,7 @@ def print_pdf(path: Path, addr: str, printer_name: str = "") -> tuple[bool, str]
         return False, "File exceeds 50 MB limit"
 
     if _lp_available() and printer_name:
-        return _print_via_lp(path, printer_name)
+        return _print_via_lp(path, printer_name, color=color, duplex=duplex)
 
     ip = resolve_addr(addr) if addr else None
     if not ip:

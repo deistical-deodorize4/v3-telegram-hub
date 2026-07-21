@@ -1426,7 +1426,7 @@ async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Download a PDF and send it to the printer."""
+    """Download a PDF and ask for print options."""
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
         return
@@ -1451,18 +1451,9 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
         await file.download_to_drive(local_path)
 
-        await status_msg.edit_text("~ sending to printer")
-        success, msg = prn.print_pdf(local_path, cfg.PRINTER_ADDR, cfg.PRINTER_NAME)
-
-        session["mode"] = "menu"
-        session["form"] = {}
-
-        if success:
-            await status_msg.edit_text(f"> {msg}")
-        else:
-            await status_msg.edit_text(f"! {msg}")
-
-        local_path.unlink(missing_ok=True)
+        await status_msg.edit_text("> PDF received\n  Color or Black & White?")
+        session["mode"] = "print_color"
+        session["form"] = {"path": local_path}
     except Exception as e:
         session["mode"] = "menu"
         session["form"] = {}
@@ -1631,6 +1622,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(
             "> Print\n  send a PDF file\n  /cancel to cancel",
         )
+        return
+
+    # ------- Print — color mode -------
+    if session["mode"] == "print_color":
+        choice = text.strip().lower()
+        if choice in ("color", "c"):
+            session["form"]["color"] = True
+        elif choice in ("b&n", "bn", "bw", "black & white", "black and white", "blanco y negro", "blanco"):
+            session["form"]["color"] = False
+        else:
+            await update.message.reply_text("Reply *Color* or *B&N*.", parse_mode="Markdown")
+            return
+        session["mode"] = "print_duplex"
+        await update.message.reply_text(
+            "> Single-sided or double-sided?\n"
+            "  Reply *1* (single) or *2* (double, long edge).",
+            parse_mode="Markdown",
+        )
+        return
+
+    # ------- Print — duplex mode & send -------
+    if session["mode"] == "print_duplex":
+        choice = text.strip().lower()
+        if choice in ("2", "double", "double-sided", "dúplex", "duplex", "both"):
+            session["form"]["duplex"] = True
+        elif choice in ("1", "single", "single-sided", "una cara", "one"):
+            session["form"]["duplex"] = False
+        else:
+            await update.message.reply_text(
+                "Reply *1* (single) or *2* (double).", parse_mode="Markdown",
+            )
+            return
+
+        local_path = session["form"].get("path")
+        color = session["form"].get("color", True)
+        duplex = session["form"].get("duplex", False)
+
+        color_label = "Color" if color else "B&N"
+        duplex_label = "double-sided" if duplex else "single-sided"
+        status_msg = await update.message.reply_text(f"~ printing {color_label} · {duplex_label}")
+
+        try:
+            success, msg = prn.print_pdf(
+                local_path, cfg.PRINTER_ADDR, cfg.PRINTER_NAME,
+                color=color, duplex=duplex,
+            )
+            if success:
+                await status_msg.edit_text(f"> {msg}")
+            else:
+                await status_msg.edit_text(f"! {msg}")
+        except Exception as exc:
+            await status_msg.edit_text(f"! {exc}")
+        finally:
+            local_path.unlink(missing_ok=True)
+            session["mode"] = "menu"
+            session["form"] = {}
         return
 
     # ------- Lens Tracker -------
