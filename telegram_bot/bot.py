@@ -1665,8 +1665,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         try:
             success, msg = prn.print_pdf(
-                local_path, cfg.PRINTER_ADDR, cfg.PRINTER_NAME,
-                color=color, duplex=duplex,
+                local_path, cfg.PRINTER_ADDR, color=color, duplex=duplex,
             )
             if success:
                 await status_msg.edit_text(f"> {msg}")

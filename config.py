@@ -91,10 +91,9 @@ AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoi
 AEMET_UVI_LOCALIDAD: str = "Zaragoza"      # Localidad name in UV index response
 
 # ---------------------------------------------------------------------------
-# Printer (raw TCP/JetDirect – no CUPS dependencies)
+# Printer (raw TCP/JetDirect – needs ghostscript to render PDF to PCL)
 # ---------------------------------------------------------------------------
 PRINTER_ADDR: str = os.environ.get("PRINTER_ADDR", "")
-PRINTER_NAME: str = os.environ.get("PRINTER_NAME", "HP_Envy_6400")
 
 # ---------------------------------------------------------------------------
 # Lens tracker
