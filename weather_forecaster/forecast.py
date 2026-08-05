@@ -16,7 +16,6 @@ from typing import Optional
 import joblib
 import numpy as np
 import requests
-from ai_edge_litert.interpreter import Interpreter
 
 # Ensure config is importable when run directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,6 +42,10 @@ def _get_interpreter() -> Interpreter:
     global _interpreter, _last_load
     now = time.time()
     if _interpreter is None or (now - _last_load) > 3600:  # re-load hourly
+        # Lazy import: ai-edge-litert is a training-only dependency and is
+        # not installed on the Pi (see requirements-training.txt).
+        from ai_edge_litert.interpreter import Interpreter
+
         _interpreter = Interpreter(
             model_path=str(WEATHER_TFLITE),
             num_threads=TFLITE_NUM_THREADS,

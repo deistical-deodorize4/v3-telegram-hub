@@ -19,6 +19,18 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 STUDY_LOG: Path = DATA_DIR / "study_log.csv"
 
 
+def _parse_date(d: str) -> date | None:
+    """Parse a study-log date, tolerating ISO and the old DD-MM-YYYY format."""
+    from datetime import datetime
+
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(d, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
 # ---------------------------------------------------------------------------
 # CSV reader
 # ---------------------------------------------------------------------------
@@ -70,23 +82,19 @@ def calc_streak() -> tuple[int, int, list[str]]:
     if not rows:
         return (0, 0, [])
 
-    # Unique study dates, sorted
-    study_dates = sorted({r["date"] for r in rows if r["date"]})
-    if not study_dates:
-        return (0, 0, [])
-
-    # Convert to date objects
-    study_dates_dt = []
-    for d in study_dates:
-        try:
-            study_dates_dt.append(date.fromisoformat(d))
-        except ValueError:
-            continue
+    # Unique study dates (parsed) sorted — dedupe AFTER parsing so that ISO
+    # and legacy DD-MM-YYYY entries for the same day collapse into one date.
+    study_dates_dt = sorted(
+        {
+            d
+            for d in (_parse_date(r["date"]) for r in rows if r["date"])
+            if d is not None
+        }
+    )
     if not study_dates_dt:
         return (0, 0, [])
 
     study_set = set(study_dates_dt)
-    study_dates_dt.sort()
 
     # Current streak: from the most recent study date, count backwards
     last = study_dates_dt[-1]
@@ -147,13 +155,12 @@ def week_summary(year_week: str | None = None) -> str | None:
     # Filter rows for that ISO week
     filtered = []
     for r in rows:
-        try:
-            d = date.fromisoformat(r["date"])
-            y, w, _ = d.isocalendar()
-            if y == target_year and w == target_week:
-                filtered.append(r)
-        except (ValueError, TypeError):
+        d = _parse_date(r["date"])
+        if d is None:
             continue
+        y, w, _ = d.isocalendar()
+        if y == target_year and w == target_week:
+            filtered.append(r)
 
     if not filtered:
         if year_week:

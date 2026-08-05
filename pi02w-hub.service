@@ -12,6 +12,8 @@ ExecStart=/usr/bin/python3 /home/pi/telegram-bot/telegram_bot/bot.py
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+# Reminders & weather use naive datetime.now(); must be Europe/Madrid time.
+Environment=TZ=Europe/Madrid
 
 # Harden the service
 NoNewPrivileges=true

@@ -1528,7 +1528,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(STUDY_STEPS[len(session["form"])][1])
         else:
             f = session["form"]
-            today = datetime.now().strftime("%d-%m-%Y")
+            today = date.today().isoformat()
             file_exists = cfg.STUDY_LOG.exists()
             with cfg.STUDY_LOG.open("a", newline="") as csvfile:
                 writer = csv.writer(csvfile)
@@ -1581,7 +1581,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(FINANCE_STEPS[len(session["form"])][1])
         else:
             f = session["form"]
-            today = datetime.now().strftime("%d-%m-%Y")
+            today = date.today().isoformat()
             file_exists = cfg.FINANCE_LOG.exists()
             with cfg.FINANCE_LOG.open("a", newline="") as csvfile:
                 writer = csv.writer(csvfile)

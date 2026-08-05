@@ -80,13 +80,19 @@ def _current_month_display() -> str:
 
 
 def _in_current_month(date_str: str) -> bool:
-    """Check if a DD-MM-YYYY date string falls in the current month."""
-    try:
-        dt = datetime.strptime(date_str, "%d-%m-%Y")
-        now = datetime.now()
-        return dt.month == now.month and dt.year == now.year
-    except (ValueError, TypeError):
-        return False
+    """Check if a date string falls in the current month.
+
+    Accepts both ISO (``YYYY-MM-DD``) and the old ``DD-MM-YYYY`` format —
+    the bot used to write the latter, the CLI writes ISO.
+    """
+    now = datetime.now()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            return dt.month == now.month and dt.year == now.year
+        except (ValueError, TypeError):
+            continue
+    return False
 
 
 def get_spending(category: str) -> float:

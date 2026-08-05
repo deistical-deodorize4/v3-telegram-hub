@@ -709,6 +709,7 @@ def format_morning_report() -> str | None:
         sky = today.get("estadoCielo", [])
         precip = today.get("probPrecipitacion", [])
         viento = today.get("viento", [])
+        humedad = today.get("humedad", [])
         orto = today.get("orto", "")
         ocaso = today.get("ocaso", "")
 
