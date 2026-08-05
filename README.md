@@ -2,6 +2,12 @@
 
 Telegram bot for a Raspberry Pi Zero 2W. Weather, chatbot, system monitor, study & finance logging.
 
+## System dependencies
+
+```bash
+sudo apt install ghostscript   # required to print PDFs (PDF → PCL rendering)
+```
+
 ## Quick start
 
 ```bash
@@ -29,6 +35,7 @@ sudo systemctl start pi02w-hub
 | `GEMINI_API_KEY` | Google AI Studio key |
 | `TELEGRAM_USER_ID` | Your Telegram user ID |
 | `AEMET_API_KEY` | (optional) AEMET OpenData key for Spanish weather |
+| `PRINTER_ADDR` | (optional) Printer IP for the 🖨 Print feature |
 
 ## Commands
 
