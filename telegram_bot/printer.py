@@ -7,8 +7,10 @@ gibberish — so we render the PDF to PCL3 with ghostscript and send PCL.
 from __future__ import annotations
 
 import logging
+import shutil
 import socket
 import subprocess
+import tempfile
 from pathlib import Path
 
 log = logging.getLogger("aihub.printer")
@@ -16,20 +18,48 @@ log = logging.getLogger("aihub.printer")
 _PRINTER_PORT = 9100
 _SEND_TIMEOUT = 30
 _CHUNK_SIZE = 65536
+# Hard safety cap: a user uploading a 250+ page PDF would take forever on a Pi.
+_PAGE_CAP = 250
 
 
 def _to_pcl(path: Path) -> Path:
-    """Render a PDF to a sibling ``.pcl`` file using ghostscript's pcl3 device."""
+    """Render a PDF to a sibling ``.pcl`` file using ghostscript's pcl3 device.
+
+    The gs ``pcl3`` device has a bug where multi-page PDFs come out blank, so
+    we render every page separately (``-dFirstPage``/``-dLastPage``) and
+    concatenate the per-page PCL into one stream. Ghostscript exits without
+    creating an output file once ``-dFirstPage`` is past the last page, which
+    is how we detect the end of the document.
+    """
     out = path.with_suffix(".pcl")
-    subprocess.run(
-        [
-            "gs", "-q", "-dNOPAUSE", "-dBATCH",
-            "-sDEVICE=pcl3",
-            f"-sOutputFile={out}",
-            str(path),
-        ],
-        check=True, capture_output=True, text=True, timeout=_SEND_TIMEOUT * 4,
-    )
+    tmpdir = Path(tempfile.mkdtemp(prefix="pcl-"))
+    try:
+        pages = 0
+        with out.open("wb") as dst:
+            for page in range(1, _PAGE_CAP + 1):
+                page_pcl = tmpdir / f"page-{page}.pcl"
+                subprocess.run(
+                    [
+                        "gs", "-q", "-dNOPAUSE", "-dBATCH", "-dSAFER",
+                        f"-dFirstPage={page}", f"-dLastPage={page}",
+                        "-sDEVICE=pcl3",
+                        f"-sOutputFile={page_pcl}",
+                        str(path),
+                    ],
+                    capture_output=True, text=True, timeout=_SEND_TIMEOUT * 4,
+                )
+                if not page_pcl.is_file() or page_pcl.stat().st_size == 0:
+                    if page == 1:
+                        raise subprocess.CalledProcessError(
+                            1, "gs", output="", stderr="page 1 produced no output"
+                        )
+                    break  # past the last page
+                dst.write(page_pcl.read_bytes())
+                pages += 1
+        if pages == 0:
+            raise subprocess.CalledProcessError(1, "gs", output="", stderr="no pages rendered")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
     return out
 
 
@@ -44,7 +74,7 @@ def print_pdf(path: Path, addr: str,
     except OSError as e:
         return False, f"Cannot read file: {e}"
 
-    if not addr:
+    if not addr or not addr.strip():
         return False, "Set PRINTER_ADDR in .env (the printer's IP)"
 
     try:
