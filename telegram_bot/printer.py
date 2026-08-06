@@ -13,8 +13,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageOps
-
 log = logging.getLogger("aihub.printer")
 
 _PRINTER_PORT = 9100
@@ -78,6 +76,12 @@ def _image_to_pdf(path: Path) -> Path:
     photos are downscaled so PCL rendering stays quick on a Pi.
     """
     out = path.with_suffix(".pdf")
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        raise RuntimeError(
+            "Pillow is not installed. Install it:  sudo python3 -m pip install Pillow"
+        ) from None
     with Image.open(path) as im:
         im = ImageOps.exif_transpose(im)
         if im.mode in ("RGBA", "LA", "P"):
