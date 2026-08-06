@@ -1458,9 +1458,17 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         file = await context.bot.get_file(doc.file_id)
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
-        await file.download_to_drive(local_path)
+        await file.download_to_drive(local_path, timeout=120)
 
-        await status_msg.edit_text("> File received\n  Color or Black & White?")
+        ok, detail = prn.validate_document(local_path)
+        if not ok:
+            local_path.unlink(missing_ok=True)
+            session["mode"] = "menu"
+            session["form"] = {}
+            await status_msg.edit_text(f"! File not printable: {detail}")
+            return
+
+        await status_msg.edit_text(f"> File received ({detail})\n  Color or Black & White?")
         session["mode"] = "print_color"
         session["form"] = {"path": local_path}
     except Exception as e:

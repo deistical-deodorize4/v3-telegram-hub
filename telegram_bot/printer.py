@@ -68,6 +68,41 @@ def _to_pcl(path: Path) -> Path:
     return out
 
 
+def _magic_bytes(path: Path) -> str:
+    try:
+        with open(path, "rb") as f:
+            return f.read(16).hex()
+    except OSError:
+        return "?"
+
+
+def validate_document(path: Path) -> tuple[bool, str]:
+    """Return (ok, detail) for a downloaded PDF/image before asking print options.
+
+    Fails fast so the user isn't asked color/duplex for a file that can't be
+    printed, and surfaces the file size + magic bytes for diagnosis.
+    """
+    if not path.is_file():
+        return False, "File not found"
+    size = path.stat().st_size
+    if size == 0:
+        return False, "Downloaded file is empty"
+    if path.suffix.lower() in _IMAGE_SUFFIXES:
+        try:
+            from PIL import Image
+        except ImportError:
+            return False, "Pillow is not installed. Install it:  sudo python3 -m pip install Pillow"
+        try:
+            with Image.open(path) as im:
+                return True, f"{im.format} {im.size[0]}x{im.size[1]}"
+        except Exception as e:
+            return False, f"{e} (file {size} bytes, magic={_magic_bytes(path)})"
+    with open(path, "rb") as f:
+        if f.read(5) == b"%PDF-":
+            return True, f"PDF, {size} bytes"
+    return False, f"Not a PDF or image (file {size} bytes, magic={_magic_bytes(path)})"
+
+
 def _image_to_pdf(path: Path) -> Path:
     """Rasterize an image to a sibling ``.pdf`` file via Pillow.
 
