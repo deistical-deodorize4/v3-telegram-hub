@@ -1468,7 +1468,10 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
             await status_msg.edit_text(f"! File not printable: {detail}")
             return
 
-        await status_msg.edit_text(f"> File received ({detail})\n  Color or Black & White?")
+        await status_msg.edit_text(
+            f"> File received ({detail})\n"
+            "  Reply *1* (color) or *2* (black & white)."
+        )
         session["mode"] = "print_color"
         session["form"] = {"path": local_path}
     except Exception as e:
@@ -1644,12 +1647,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # ------- Print — color mode -------
     if session["mode"] == "print_color":
         choice = text.strip().lower()
-        if choice in ("color", "c"):
+        if choice in ("1", "color", "c"):
             session["form"]["color"] = True
-        elif choice in ("b&n", "bn", "bw", "black & white", "black and white", "blanco y negro", "blanco"):
+        elif choice in ("2", "b&n", "bn", "bw", "black & white", "black and white", "blanco y negro", "blanco"):
             session["form"]["color"] = False
         else:
-            await update.message.reply_text("Reply *Color* or *B&N*.", parse_mode="Markdown")
+            await update.message.reply_text(
+                "Reply *1* (color) or *2* (black & white).", parse_mode="Markdown",
+            )
             return
         session["mode"] = "print_duplex"
         await update.message.reply_text(
