@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 log = logging.getLogger("aihub.printer")
 
 _PRINTER_PORT = 9100
@@ -20,6 +22,11 @@ _SEND_TIMEOUT = 30
 _CHUNK_SIZE = 65536
 # Hard safety cap: a user uploading a 250+ page PDF would take forever on a Pi.
 _PAGE_CAP = 250
+# Longest side (px) after downscaling an image; keeps PCL rendering fast on a Pi.
+_IMAGE_SAVE_CAP = 2000
+_IMAGE_SUFFIXES = {
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff",
+}
 
 
 def _to_pcl(path: Path) -> Path:
@@ -61,6 +68,46 @@ def _to_pcl(path: Path) -> Path:
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
     return out
+
+
+def _image_to_pdf(path: Path) -> Path:
+    """Rasterize an image to a sibling ``.pdf`` file via Pillow.
+
+    The result drops into the existing PDF → PCL pipeline unchanged. EXIF
+    rotation is applied, transparency is flattened onto white, and very large
+    photos are downscaled so PCL rendering stays quick on a Pi.
+    """
+    out = path.with_suffix(".pdf")
+    with Image.open(path) as im:
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            bg = Image.new("RGB", im.size, "white")
+            bg.paste(im, mask=im.getchannel("A"))
+            im = bg
+        else:
+            im = im.convert("RGB")
+        if max(im.size) > _IMAGE_SAVE_CAP:
+            im.thumbnail((_IMAGE_SAVE_CAP, _IMAGE_SAVE_CAP))
+        im.save(out, "PDF", resolution=200.0)
+    return out
+
+
+def print_file(path: Path, addr: str,
+               color: bool = True, duplex: bool = False) -> tuple[bool, str]:
+    """Print a PDF, or an image (rasterised to PDF first), to the printer."""
+    if not path.is_file():
+        return False, "File not found"
+    if path.suffix.lower() in _IMAGE_SUFFIXES:
+        try:
+            pdf = _image_to_pdf(path)
+        except Exception as e:
+            return False, f"Unsupported or unreadable image: {e}"
+        try:
+            return print_pdf(pdf, addr, color=color, duplex=duplex)
+        finally:
+            pdf.unlink(missing_ok=True)
+    return print_pdf(path, addr, color=color, duplex=duplex)
 
 
 def print_pdf(path: Path, addr: str,

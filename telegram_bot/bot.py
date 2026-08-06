@@ -1426,7 +1426,7 @@ async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Download a PDF and ask for print options."""
+    """Download a PDF/image and ask for print options."""
     user_id = update.effective_user.id
     if user_id != ALLOWED_USER:
         return
@@ -1436,8 +1436,17 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     doc = update.message.document
-    if doc.mime_type != "application/pdf":
-        await update.message.reply_text("Only PDF files are supported.")
+    mime = doc.mime_type or ""
+    name = (doc.file_name or "").lower()
+    allowed_mime = {
+        "application/pdf",
+        "image/jpeg", "image/png", "image/webp",
+        "image/bmp", "image/tiff", "image/gif",
+    }
+    if mime not in allowed_mime and not name.endswith(
+        (".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif")
+    ):
+        await update.message.reply_text("Only PDF or image files are supported.")
         return
     if doc.file_size and doc.file_size > 10 * 1024 * 1024:
         await update.message.reply_text("File too large (max 10 MB).")
@@ -1451,7 +1460,7 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
         await file.download_to_drive(local_path)
 
-        await status_msg.edit_text("> PDF received\n  Color or Black & White?")
+        await status_msg.edit_text("> File received\n  Color or Black & White?")
         session["mode"] = "print_color"
         session["form"] = {"path": local_path}
     except Exception as e:
@@ -1620,7 +1629,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session["mode"] = "print"
         session["form"] = {}
         await update.message.reply_text(
-            "> Print\n  send a PDF file\n  /cancel to cancel",
+            "> Print\n  send a PDF or image file\n  /cancel to cancel",
         )
         return
 
@@ -1664,7 +1673,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         status_msg = await update.message.reply_text(f"~ printing {color_label} · {duplex_label}")
 
         try:
-            success, msg = prn.print_pdf(
+            success, msg = prn.print_file(
                 local_path, cfg.PRINTER_ADDR, color=color, duplex=duplex,
             )
             if success:
