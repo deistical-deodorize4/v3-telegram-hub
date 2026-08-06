@@ -96,11 +96,19 @@ def validate_document(path: Path) -> tuple[bool, str]:
             with Image.open(path) as im:
                 return True, f"{im.format} {im.size[0]}x{im.size[1]}"
         except Exception as e:
-            return False, f"{e} (file {size} bytes, magic={_magic_bytes(path)})"
+            with open(path, "rb") as f:
+                head = f.read(300)
+            snippet = head.decode("utf-8", "replace").strip().replace("\n", " ")[:160]
+            return False, (
+                f"{e} (file {size} bytes, magic={_magic_bytes(path)}, "
+                f"head={snippet!r})"
+            )
     with open(path, "rb") as f:
-        if f.read(5) == b"%PDF-":
-            return True, f"PDF, {size} bytes"
-    return False, f"Not a PDF or image (file {size} bytes, magic={_magic_bytes(path)})"
+        head = f.read(300)
+    if head[:5] == b"%PDF-":
+        return True, f"PDF, {size} bytes"
+    snippet = head.decode("utf-8", "replace").strip().replace("\n", " ")[:160]
+    return False, f"Not a PDF or image (file {size} bytes, head={snippet!r})"
 
 
 def _image_to_pdf(path: Path) -> Path:
