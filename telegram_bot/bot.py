@@ -1457,6 +1457,7 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
     status_msg = await update.message.reply_text("~ downloading")
     try:
         file = await context.bot.get_file(doc.file_id)
+        log.warning("print download url: %s (%s bytes)", file.file_path, doc.file_size)
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
         await file.download_to_drive(local_path)
 
