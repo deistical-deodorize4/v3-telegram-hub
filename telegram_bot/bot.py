@@ -1458,7 +1458,7 @@ async def handle_print_document(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         file = await context.bot.get_file(doc.file_id)
         local_path = cfg.TEMP_DIR / f"print_{int(time.time())}_{doc.file_name or 'document.pdf'}"
-        await file.download_to_drive(local_path, timeout=120)
+        await file.download_to_drive(local_path)
 
         ok, detail = prn.validate_document(local_path)
         if not ok:
