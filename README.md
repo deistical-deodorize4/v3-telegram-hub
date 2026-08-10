@@ -3,13 +3,13 @@
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install pip git ghostscript python3-pillow    
-python3 -m pip install --break-system-packages -r requirements.txt
 ```
 
 ## Setup
 
 ```bash
-git clone <https://github.com/deistical-deodorize4/v3-telegram-hub> pi02w-hub && cd pi02w-hub
+git clone 
+python3 -m pip install --break-system-packages -r requirements.txt
 cp .env.example .env 
 python3 telegram_bot/bot.py
 ```
