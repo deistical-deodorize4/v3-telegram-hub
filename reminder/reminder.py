@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("aihub.reminder")
+log = logging.getLogger("pi02w_hub.reminder")
 
 _DATA_DIR = Path(__file__).resolve().parent
 REMINDERS_FILE: Path = _DATA_DIR / "reminders.json"

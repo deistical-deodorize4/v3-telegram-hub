@@ -13,7 +13,7 @@ import re
 
 import requests
 
-log = logging.getLogger("aihub.price_watcher")
+log = logging.getLogger("pi02w_hub.price_watcher")
 
 
 class PriceScrapeError(Exception):

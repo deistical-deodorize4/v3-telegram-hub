@@ -5,7 +5,7 @@ import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-log = logging.getLogger("aihub.lens")
+log = logging.getLogger("pi02w_hub.lens")
 
 _LENS_DAYS = 30
 

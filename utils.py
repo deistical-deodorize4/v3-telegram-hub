@@ -1,5 +1,5 @@
 """
-Shared utilities for pi02w Hub.
+Shared utilities for pi02w-hub.
 
 Logging setup and other cross-cutting helpers.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 # ---------------------------------------------------------------------------
-# Logging – call once at startup from main.py / bot.py
+# Logging – call once at startup from bot.py
 # ---------------------------------------------------------------------------
 _LOGGER_INITIALIZED = False
 
@@ -28,4 +28,4 @@ def setup_logging(level: int = logging.INFO) -> None:
     _LOGGER_INITIALIZED = True
 
 
-log = logging.getLogger("aihub")
+log = logging.getLogger("pi02w_hub")

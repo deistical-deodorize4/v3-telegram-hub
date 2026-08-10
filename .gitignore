@@ -14,15 +14,8 @@ venv/
 .venv/
 
 # ── Personal data (CSV/JSON logs) ──
-data/study_log.csv
-data/finance_log.csv
-data/budgets.json
 price_watcher/watchlist.json
 price_watcher/price_history.csv
-
-# ── Writing corrector cache ──
-writing_corrector/.cache/
-writing_corrector/outputs/
 
 # ── IDE / editors ──
 .vscode/

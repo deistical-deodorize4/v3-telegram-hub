@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("aihub.impulse")
+log = logging.getLogger("pi02w_hub.impulse")
 
 _DATA_DIR = Path(__file__).resolve().parent
 WISHLIST_FILE: Path = _DATA_DIR / "wishlist.json"

@@ -1,5 +1,5 @@
 [Unit]
-Description=pi02w Hub — Telegram Bot
+Description=pi02w-hub — Telegram Bot
 After=network-online.target
 Wants=network-online.target
 
@@ -7,8 +7,8 @@ Wants=network-online.target
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/telegram-bot
-ExecStart=/usr/bin/python3 /home/pi/telegram-bot/telegram_bot/bot.py
+WorkingDirectory=/home/pi/pi02w-hub
+ExecStart=/usr/bin/python3 /home/pi/pi02w-hub/telegram_bot/bot.py
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1

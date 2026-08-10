@@ -1,14 +1,10 @@
 # ── Runtime (install these on the Pi) ──
-#   pip install -r requirements-runtime.txt
--r requirements-runtime.txt
+#   pip install -r requirements.txt
+# System package also required (not a pip dep):
+#   sudo apt install ghostscript    (renders PDFs to PCL for the printer)
 
-# ── Training / export (optional, NOT needed on Pi) ──
-# These pull huge dependencies (tensorflow ~400MB+) and have no
-# pre-built wheels for armv6/armv7.  Only install on a dev machine.
-#   pip install -r requirements-training.txt
-#
-# google-genai
-# python-docx
-# pandas
-# scikit-learn
-# tensorflow
+python-telegram-bot[job-queue]>=21
+requests
+psutil
+python-dotenv
+Pillow

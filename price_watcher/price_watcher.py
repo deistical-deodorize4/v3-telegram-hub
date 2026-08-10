@@ -19,7 +19,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from price_watcher.scrapers import PriceScrapeError, scrape
 
-log = logging.getLogger("aihub.price_watcher")
+log = logging.getLogger("pi02w_hub.price_watcher")
 
 _WATCHER_DIR = Path(__file__).resolve().parent
 CONFIG_FILE: Path = _WATCHER_DIR / "watchlist.json"

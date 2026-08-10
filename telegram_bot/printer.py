@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-log = logging.getLogger("aihub.printer")
+log = logging.getLogger("pi02w_hub.printer")
 
 _PRINTER_PORT = 9100
 _SEND_TIMEOUT = 30

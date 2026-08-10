@@ -1,5 +1,5 @@
 """
-Telegram bot for pi02w Hub.
+Telegram bot for pi02w-hub.
 
 Provides a custom-keyboard interface for all six features via
 python-telegram-bot v21+, plus a daily health report at 22:00
@@ -9,7 +9,6 @@ Europe/Madrid with spikes, averages, and alerts.
 from __future__ import annotations
 
 from collections import defaultdict
-import csv
 import logging
 import os
 import sys
@@ -34,8 +33,6 @@ from weather_forecaster import weather_aemet
 from price_watcher import price_watcher as pw
 from reminder import reminder as rmd
 from impulse_buy import wish as ibw
-from finance_tracker import budget as bgt
-from study_tracker import dashboard as stdash
 from lens_tracker import tracker as lens
 from telegram_bot import printer as prn
 from utils import log, setup_logging
@@ -363,15 +360,6 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 chat_id=ALLOWED_USER,
                 text="> Daily Report\n  no data collected today (bot just started).",
             )
-
-        # Month-end budget recap
-        tomorrow = date.today() + timedelta(days=1)
-        if tomorrow.day == 1:
-            recap = bgt.format_recap()
-            if recap:
-                await context.bot.send_message(
-                    chat_id=ALLOWED_USER, text=recap, parse_mode="Markdown",
-                )
     except Exception as exc:
         log.error("Daily report send failed: %s", exc)
     finally:
@@ -478,10 +466,10 @@ async def startup_notification(app: Application) -> None:
     uptime_h = _get_uptime()
 
     if uptime_h < 0.17:  # less than ~10 minutes
-        icon = "*(hard resetted) Pi02w*"
+        icon = "*(hard resetted) Pi02w-hub*"
         note = "possible power outage/restart"
     else:
-        icon = "*Pi02w*"
+        icon = "*Pi02w-hub*"
         note = "bot restarted (softly)"
 
     msg = (
@@ -502,21 +490,6 @@ async def startup_notification(app: Application) -> None:
 # ---------------------------------------------------------------------------
 user_sessions: dict[int, dict[str, Any]] = {}
 
-STUDY_STEPS = [
-    ("unit", "Unit studied (1-69)?"),
-    ("hours", "Hours studied (e.g. 1.5)?"),
-    ("energy", "Energy level before studying (1-10)?"),
-    ("sleep", "Hours of sleep last night?"),
-    ("grade", "Grade received? (send . if none yet)"),
-    ("rating", "Session quality rating (1-10)?"),
-]
-
-FINANCE_STEPS = [
-    ("type", "Type? (fixed / variable)"),
-    ("category", "Category? (e.g. food, transport, salary)"),
-    ("amount", "Amount? (+ for income, - for expense. e.g. -12.50)"),
-    ("description", "Description?"),
-]
 
 # ---------------------------------------------------------------------------
 # Keyboard
@@ -524,14 +497,12 @@ FINANCE_STEPS = [
 MENU_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🌤 Weather", "🖨 Print"],
-        ["💰 Finance Log", "📚 Study Log"],
         ["📈 Price Watch", "💸 Impulse Buy"],
         ["📢 Reminder", "👁 Lenses"],
         ["🕵️ Monitor", "📋 Commands"],
     ],
     resize_keyboard=True,
 )
-
 def _get_session(user_id: int) -> dict[str, Any]:
     if user_id not in user_sessions:
         user_sessions[user_id] = {"mode": "menu", "history": [], "form": {}}
@@ -549,7 +520,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     _get_session(user_id)["mode"] = "menu"
     await update.message.reply_text(
-        "> *pi02w Hub*\nSelect an option:",
+        "> *pi02w-hub*\nSelect an option:",
         parse_mode="Markdown",
         reply_markup=MENU_KEYBOARD,
     )
@@ -574,125 +545,6 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.reply_text(report, parse_mode="Markdown")
         else:
             await update.message.reply_text("> Daily Report\n  no data yet")
-
-
-# ---------------------------------------------------------------------------
-# Study Dashboard commands
-# ---------------------------------------------------------------------------
-
-
-async def streak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show study streak."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        return
-    cur, longest, dates = stdash.calc_streak()
-    if cur == 0:
-        await update.message.reply_text("> Streak\n  no data yet", parse_mode="Markdown")
-        return
-
-    lines = ["> Streak"]
-    lines.append(f"  current  {cur} day{'s' if cur != 1 else ''}")
-    lines.append(f"  longest  {longest} day{'s' if longest != 1 else ''}")
-
-    if len(dates) <= 7:
-        lines.append("  " + " · ".join(dates[-7:]))
-
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
-
-async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show weekly study summary."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        return
-    args: list[str] = context.args if context.args else []
-    week_arg = args[0] if args else None
-    result = stdash.week_summary(week_arg)
-    if result:
-        await update.message.reply_text(result, parse_mode="Markdown")
-    else:
-        await update.message.reply_text("> Week\n  no data yet", parse_mode="Markdown")
-
-
-async def units_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show unit coverage."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        return
-    result = stdash.unit_coverage()
-    if result:
-        await update.message.reply_text(result, parse_mode="Markdown")
-    else:
-        await update.message.reply_text("> Unit Coverage\n  no data yet", parse_mode="Markdown")
-
-
-async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show all-time study progress."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        return
-    result = stdash.all_time_progress()
-    if result:
-        await update.message.reply_text(result, parse_mode="Markdown")
-    else:
-        await update.message.reply_text("> Study Progress\n  no data yet", parse_mode="Markdown")
-
-
-# ---------------------------------------------------------------------------
-# Budget command
-# ---------------------------------------------------------------------------
-
-
-async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /budget: set, show, remove budget limits."""
-    user_id = update.effective_user.id
-    if user_id != ALLOWED_USER:
-        await update.message.reply_text("! unauthorized")
-        return
-
-    args: list[str] = context.args if context.args else []
-    text = " ".join(args).strip()
-
-    if not text:
-        # No args → show all budgets
-        await update.message.reply_text(bgt.format_status(), parse_mode="Markdown")
-        return
-
-    # /budget rm <category>
-    if text.lower().startswith("rm "):
-        cat = text[3:].strip()
-        if bgt.remove_budget(cat):
-            await update.message.reply_text(f"> {cat}\n  removed", parse_mode="Markdown")
-        else:
-            await update.message.reply_text(f"> {cat}\n  no budget set", parse_mode="Markdown")
-        return
-
-    # /budget <category> <amount>  — or just /budget <category> to show one
-    parts = text.rsplit(maxsplit=1)
-    category = parts[0].strip().lower()
-
-    if len(parts) == 2:
-        try:
-            amount = float(parts[1])
-            if amount <= 0:
-                raise ValueError
-            bgt.set_budget(category, amount)
-            status = bgt.format_category_status(category)
-            await update.message.reply_text(
-                f"> {category}\n  set to {amount:.0f}€\n{status}",
-                parse_mode="Markdown",
-            )
-        except ValueError:
-            await update.message.reply_text("! amount must be positive", parse_mode="Markdown")
-        return
-
-    # Just category name → show that category
-    status = bgt.format_category_status(category)
-    if status:
-        await update.message.reply_text(status, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(f"> {category}\n  no budget set", parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -1508,127 +1360,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"! aemet error: {exc}")
         return
 
-    # ------- Study Log -------
-    if text == "📚 Study Log":
-        session["mode"] = "study"
-        session["form"] = {}
-        await update.message.reply_text(STUDY_STEPS[0][1])
-        return
-
-    if session["mode"] == "study":
-        step_index = len(session["form"])
-        key, _ = STUDY_STEPS[step_index]
-
-        try:
-            if key == "unit":
-                val = int(text)
-                if not (1 <= val <= 69):
-                    raise ValueError
-            elif key in ("hours", "energy", "sleep", "rating"):
-                val = float(text)
-                constraints = {
-                    "hours": (0.1, 12),
-                    "energy": (1, 10),
-                    "sleep": (0, 12),
-                    "rating": (1, 10),
-                }
-                lo, hi = constraints[key]
-                if not (lo <= val <= hi):
-                    raise ValueError
-            elif key == "grade":
-                val = None if text.strip() == "." else float(text)
-            else:
-                val = text.strip()
-        except (ValueError, TypeError):
-            await update.message.reply_text(
-                f"! Invalid value. Try again.\n{STUDY_STEPS[step_index][1]}"
-            )
-            return
-
-        session["form"][key] = val
-
-        if len(session["form"]) < len(STUDY_STEPS):
-            await update.message.reply_text(STUDY_STEPS[len(session["form"])][1])
-        else:
-            f = session["form"]
-            today = date.today().isoformat()
-            file_exists = cfg.STUDY_LOG.exists()
-            with cfg.STUDY_LOG.open("a", newline="") as csvfile:
-                writer = csv.writer(csvfile)
-                if not file_exists:
-                    writer.writerow(
-                        ["date", "unit", "hours_studied", "energy_level", "sleep_hours", "grade", "rating"]
-                    )
-                writer.writerow(
-                    [today, f["unit"], f["hours"], f["energy"], f["sleep"], f["grade"], f["rating"]]
-                )
-            session["mode"] = "menu"
-            session["form"] = {}
-            await update.message.reply_text(
-                f"> Logged\n  unit {f['unit']}  ·  {f['hours']}h  ·  rating {f['rating']}/10",
-                reply_markup=MENU_KEYBOARD,
-            )
-        return
-
-    # ------- Finance Log -------
-    if text == "💰 Finance Log":
-        session["mode"] = "finance"
-        session["form"] = {}
-        await update.message.reply_text(FINANCE_STEPS[0][1])
-        return
-
-    if session["mode"] == "finance":
-        step_index = len(session["form"])
-        key, _ = FINANCE_STEPS[step_index]
-
-        try:
-            if key == "type":
-                val = text.strip().lower()
-                if val not in ("fixed", "variable"):
-                    raise ValueError
-            elif key == "amount":
-                val = float(text)
-            else:
-                val = text.strip()
-                if not val:
-                    raise ValueError
-        except (ValueError, TypeError):
-            await update.message.reply_text(
-                f"! Invalid value. Try again.\n{FINANCE_STEPS[step_index][1]}"
-            )
-            return
-
-        session["form"][key] = val
-
-        if len(session["form"]) < len(FINANCE_STEPS):
-            await update.message.reply_text(FINANCE_STEPS[len(session["form"])][1])
-        else:
-            f = session["form"]
-            today = date.today().isoformat()
-            file_exists = cfg.FINANCE_LOG.exists()
-            with cfg.FINANCE_LOG.open("a", newline="") as csvfile:
-                writer = csv.writer(csvfile)
-                if not file_exists:
-                    writer.writerow(["date", "type", "category", "amount", "description"])
-                writer.writerow([today, f["type"], f["category"], f["amount"], f["description"]])
-            session["mode"] = "menu"
-            session["form"] = {}
-
-            msg = f"> Logged\n  {f['category']}  ·  {float(f['amount']):+.2f}€  ·  {f['type']}"
-
-            # Check budget warning for this category
-            warnings = bgt.get_warnings()
-            cat_warnings = [w for w in warnings if f"*{f['category']}*" in w]
-            if cat_warnings:
-                msg += "\n\n" + "\n".join(cat_warnings)
-
-            await update.message.reply_text(
-                msg,
-                reply_markup=MENU_KEYBOARD,
-                parse_mode="Markdown",
-            )
-        return
-
     # ------- Monitor -------
     if text in ("🕵️ Monitor", "/monitor"):
         try:
@@ -1880,15 +1611,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /monitor     system monitor\n"
             "  /cancel      cancel flow\n"
             "\n"
-            ">> Study\n"
-            "  /streak      study streak\n"
-            "  /week        weekly summary\n"
-            "  /units       unit coverage\n"
-            "  /progress    all-time progress\n"
-            "\n"
-            ">> Finance\n"
-            "  /budget      budget limits\n"
-            "\n"
             ">> Price Watch\n"
             "  /priceadd    add product\n"
             "  /priceedit   edit product\n"
@@ -1911,7 +1633,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     session["history"] = []
     session["form"] = {}
     await update.message.reply_text(
-        "> *pi02w Hub*\nSelect an option:",
+        "> *pi02w-hub*\nSelect an option:",
         parse_mode="Markdown",
         reply_markup=MENU_KEYBOARD,
     )
@@ -1936,15 +1658,10 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("monitor", handle_message))
-    app.add_handler(CommandHandler("streak", streak_command))
-    app.add_handler(CommandHandler("week", week_command))
-    app.add_handler(CommandHandler("units", units_command))
-    app.add_handler(CommandHandler("progress", progress_command))
     app.add_handler(CommandHandler("priceadd", price_add_start))
     app.add_handler(CommandHandler("pricedone", price_done))
     app.add_handler(CommandHandler("cancel", price_cancel))
     app.add_handler(CommandHandler("priceremove", price_remove_start))
-    app.add_handler(CommandHandler("budget", budget_command))
     app.add_handler(CommandHandler("pricetest", price_test_start))
     app.add_handler(CommandHandler("priceedit", price_edit_start))
     app.add_handler(CommandHandler("pricereport", price_report))
