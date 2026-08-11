@@ -17,7 +17,7 @@ nano .env
 .venv/bin/python telegram_bot/bot.py
 ```
 
-Fill in your own values in `.env` — see the table below. The bot refuses to start until `TELEGRAM_BOT_TOKEN` is set.
+Fill in the `.env`
 
 | Env var | Description |
 |---------|-------------|
