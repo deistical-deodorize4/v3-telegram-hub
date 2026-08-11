@@ -2,17 +2,22 @@
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install pip git ghostscript python3-pillow    
+sudo apt install git ghostscript python3-venv
 ```
 
 ## Setup
 
 ```bash
-git clone 
-python3 -m pip install --break-system-packages -r requirements.txt
-cp .env.example .env 
-python3 telegram_bot/bot.py
+git clone https://github.com/deistical-deodorize4/v3-telegram-hub.git
+cd v3-telegram-hub
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+nano .env
+.venv/bin/python telegram_bot/bot.py
 ```
+
+Fill in your own values in `.env` — see the table below. The bot refuses to start until `TELEGRAM_BOT_TOKEN` is set.
 
 | Env var | Description |
 |---------|-------------|
@@ -23,10 +28,10 @@ python3 telegram_bot/bot.py
 
 ## Auto-start on boot
 
-The unit expects the repo at `/home/pi/pi02w-hub` (edit it if yours differs).
+The unit is a template with `__USER__` and `__REPO_PATH__` placeholders; `install.sh` fills them in for your system.
 
 ```bash
-sudo cp pi02w-hub.service /etc/systemd/system/
-sudo systemctl enable pi02w-hub
-sudo systemctl start pi02w-hub
+./install.sh
 ```
+
+This generates `/etc/systemd/system/pi02w-hub.service` from the template, then enables and starts the service. Rerun it after moving the repo or changing the service template.
