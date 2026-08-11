@@ -28,12 +28,10 @@ Fill in your own values in `.env` — see the table below. The bot refuses to st
 
 ## Auto-start on boot
 
-The unit is a template with `__USER__` and `__REPO_PATH__` placeholders; `install.sh` fills them in for your system.
+Replace the two `__USER__` and `__REPO_PATH__` placeholders in `pi02w-hub.service` with your username and the repo path, then:
 
 ```bash
-./install.sh
+sudo cp pi02w-hub.service /etc/systemd/system/
 sudo systemctl enable pi02w-hub
 sudo systemctl start pi02w-hub
 ```
-
-`install.sh` generates `/etc/systemd/system/pi02w-hub.service` from the template and reloads systemd. Rerun it after moving the repo or changing the service template. Start it yourself so you can check `systemctl status pi02w-hub` and the logs first.
