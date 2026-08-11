@@ -8,8 +8,8 @@ sudo apt install git ghostscript python3-venv
 ## Setup
 
 ```bash
-git clone https://github.com/deistical-deodorize4/v3-telegram-hub.git
-cd v3-telegram-hub
+git clone https://github.com/deistical-deodorize4/v3-telegram-hub.git /home/pi/pi02w-hub
+cd /home/pi/pi02w-hub
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
@@ -28,10 +28,17 @@ Fill in the `.env`
 
 ## Auto-start on boot
 
-Replace the two `__USER__` and `__REPO_PATH__` placeholders in `pi02w-hub.service` with your username and the repo path, then:
-
 ```bash
 sudo cp pi02w-hub.service /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl enable pi02w-hub
 sudo systemctl start pi02w-hub
+```
+
+The service assumes the standard Pi layout: user `pi` and repo at `/home/pi/pi02w-hub` (as in Setup above). If your Pi uses a different username, edit `/etc/systemd/system/pi02w-hub.service` and change the `User`/`Group` and `/home/pi/pi02w-hub` paths.
+
+Check it's running:
+
+```bash
+systemctl status pi02w-hub
 ```
