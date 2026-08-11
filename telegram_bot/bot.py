@@ -1442,7 +1442,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(lens.status(cfg.LENS_DATA), parse_mode="Markdown")
         return
 
-    if session["mode"] == "lens":
+    if session["mode"] == "lens" and text.strip().lower() in ("in", "out", "new", "fresh"):
         await lens_refresh(update, text)
         return
 
