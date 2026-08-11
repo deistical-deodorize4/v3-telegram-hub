@@ -348,8 +348,8 @@ def format_reminder(r: Reminder) -> str:
     day = r.dt.strftime("%A").capitalize()
     return (
         f"> Reminder\n"
-        f"  {r.message}\n"
-        f"  {day} {r.dt.strftime('%d-%m')}  {r.dt.strftime('%H:%M')}"
+        f"  {day} {r.dt.strftime('%d-%m')}  {r.dt.strftime('%H:%M')}\n"
+        f'  "{r.message}"'
     )
 
 

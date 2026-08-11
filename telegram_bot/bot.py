@@ -389,13 +389,11 @@ async def reminder_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         due = rmd.get_due_reminders(cfg.TIMEZONE)
         for r in due:
-            day_name = r.dt.strftime("%A").capitalize()
             await context.bot.send_message(
                 chat_id=ALLOWED_USER,
                 text=(
                     f"> Reminder\n"
-                    f"  {r.message}\n"
-                    f"  {day_name} {r.dt.strftime('%d-%m')}  {r.dt.strftime('%H:%M')}"
+                    f"  {r.message}"
                 ),
                 parse_mode="Markdown",
             )
@@ -1492,7 +1490,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         dt = rmd.parse_datetime(text, cfg.TIMEZONE)
         if dt is None:
             await update.message.reply_text(
-                "! didnt understand. try again",
+                "! didnt quite understand. try again",
             )
             return
 
@@ -1623,7 +1621,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /wishlist    impulse buy history\n"
             "\n"
             ">> Tools\n"
-            "  /print       print a PDF"
+            "  /print       print a file"
         )
         await update.message.reply_text(cmds, parse_mode="Markdown")
         return
