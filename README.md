@@ -32,6 +32,8 @@ The unit is a template with `__USER__` and `__REPO_PATH__` placeholders; `instal
 
 ```bash
 ./install.sh
+sudo systemctl enable pi02w-hub
+sudo systemctl start pi02w-hub
 ```
 
-This generates `/etc/systemd/system/pi02w-hub.service` from the template, then enables and starts the service. Rerun it after moving the repo or changing the service template.
+`install.sh` generates `/etc/systemd/system/pi02w-hub.service` from the template and reloads systemd. Rerun it after moving the repo or changing the service template. Start it yourself so you can check `systemctl status pi02w-hub` and the logs first.

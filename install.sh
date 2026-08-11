@@ -33,7 +33,8 @@ sed -e "s|__USER__|${USER_NAME}|g" \
     "${SERVICE_FILE}" | sudo tee /etc/systemd/system/pi02w-hub.service >/dev/null
 
 sudo systemctl daemon-reload
-sudo systemctl enable pi02w-hub
-sudo systemctl start pi02w-hub
 
-echo "pi02w-hub service installed and started."
+echo "Service unit installed. Enable and start it yourself:"
+echo "  sudo systemctl enable pi02w-hub"
+echo "  sudo systemctl start pi02w-hub"
+echo "Check status with:  systemctl status pi02w-hub"
