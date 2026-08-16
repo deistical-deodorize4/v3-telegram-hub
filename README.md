@@ -2,7 +2,7 @@
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install git ghostscript python3-venv
+sudo apt install git ghostscript python3-venv python3-dev build-essential
 ```
 
 ## Setup
