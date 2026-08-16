@@ -54,7 +54,6 @@ AEMET_STATION_VALDESPARTERA: str = "9434P"  # Valdespartera (primary)
 AEMET_STATION_AEROPUERTO: str = "9434"      # Aeropuerto (fallback)
 AEMET_MUNICIPIO_ID: str = "50297"           # Zaragoza municipio
 AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoint)
-AEMET_UVI_LOCALIDAD: str = "Zaragoza"      # Localidad name in UV index response
 
 # ---------------------------------------------------------------------------
 # Printer (raw TCP/JetDirect – needs ghostscript to render PDF to PCL)

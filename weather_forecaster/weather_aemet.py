@@ -9,7 +9,7 @@ New in v2:
   - Feels-like temperature (sensTermica) from hourly forecast data
   - Wind direction as compass point (N/NE/E/SE/S/SW/W/NW)
   - Sunrise & sunset times (orto/ocaso) from the municipio forecast
-  - UV Index from AEMET specific prediction endpoint
+  - UV Index from the daily municipio forecast (uvMax)
   - Weather warnings (avisos) for Aragón via CAP endpoint
   - Unicode temp sparkline for visual temperature trend
   - Weekday names (Mon/Tue/Wed/Thu/Fri/Sat/Sun) in forecast
@@ -36,7 +36,6 @@ from config import (  # noqa: E402
     AEMET_STATION_AEROPUERTO,
     AEMET_MUNICIPIO_ID,
     AEMET_CCAA_ARAGON,
-    AEMET_UVI_LOCALIDAD,
     FORECAST_CACHE_SECONDS,
 )
 
@@ -248,8 +247,14 @@ def _fetch_current() -> tuple[list | None, str]:
 
 
 def _parse_current(data: list) -> dict:
-    """Extract the most recent observation row into a flat dict."""
-    latest = data[-1]  # last entry = most recent
+    """Extract the most recent observation row into a flat dict.
+
+    AEMET normally returns observations sorted by time, but sort defensively
+    by ``fint`` so we always pick the newest row regardless of server order.
+    """
+    def _obs_key(row: dict) -> str:
+        return str(row.get("fint", ""))
+    latest = max(data, key=_obs_key)
     return {
         "temp": float(latest.get("ta", latest.get("t", 0)) or 0),
         "humidity": float(latest.get("hr", 0) or 0),
@@ -274,6 +279,49 @@ def _fetch_forecast() -> list | None:
     )
 
 
+def _fetch_daily() -> list | None:
+    """Fetch daily forecast for Zaragoza municipio (official min/max + UV)."""
+    return _cached_get(
+        f"/prediccion/especifica/municipio/diaria/{AEMET_MUNICIPIO_ID}",
+        cache_key="forecast_daily",
+    )
+
+
+def _parse_daily_summary(data: list | None) -> dict[str, Any] | None:
+    """Extract today's official min/max temperature and UV from the daily forecast.
+
+    Returns ``{"fecha", "minima", "maxima", "uv"}`` (``uv`` may be None) or None.
+
+    The daily prediction is the only AEMET source for the true 24h min/max:
+    the hourly forecast's first day is *partial* (it only covers hours from
+    ~08/09 local onward), so computing min/max from it misses the overnight low.
+    """
+    try:
+        day = data[0]["prediccion"]["dia"][0]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+    temp = day.get("temperatura", {})
+    try:
+        maxima = float(temp.get("maxima", 0))
+        minima = float(temp.get("minima", 0))
+    except (TypeError, ValueError):
+        return None
+
+    uv = day.get("uvMax")
+    try:
+        uv = float(uv)
+    except (TypeError, ValueError):
+        uv = None
+
+    return {
+        "fecha": day.get("fecha", ""),
+        "minima": minima,
+        "maxima": maxima,
+        "uv": uv,
+    }
+
+
 def _safe_dato(day: dict, key: str) -> list:
     """Extract the ``dato`` list from an AEMET field.
 
@@ -294,8 +342,12 @@ def _parse_forecast(data: list) -> list:
     Each day dict now includes:
       - fecha, weekday
       - temperatura, sensTermica, estadoCielo, probPrecipitacion, precipitacion
-      - viento (with direccion in degrees), humedad, probTormenta
+      - viento (direccion is a Spanish compass point: N/NE/E/SE/S/SO/O/NO)
+      - humedad, probTormenta
       - orto (sunrise), ocaso (sunset)
+
+    Source key names follow the AEMET API exactly: the humidity field is
+    ``humedadRelativa`` and the hourly wind field is ``vientoAndRachaMax``.
     """
     try:
         days = data[0]["prediccion"]["dia"]
@@ -324,62 +376,13 @@ def _parse_forecast(data: list) -> list:
             "estadoCielo": _safe_dato(day, "estadoCielo"),
             "probPrecipitacion": _safe_dato(day, "probPrecipitacion"),
             "precipitacion": _safe_dato(day, "precipitacion"),
-            "viento": _safe_dato(day, "viento"),
-            "humedad": _safe_dato(day, "humedad"),
+            "viento": _safe_dato(day, "vientoAndRachaMax"),
+            "humedad": _safe_dato(day, "humedadRelativa"),
             "probTormenta": _safe_dato(day, "probTormenta"),
             "orto": day.get("orto", ""),
             "ocaso": day.get("ocaso", ""),
         })
     return parsed
-
-
-# ---------------------------------------------------------------------------
-# UV Index
-# ---------------------------------------------------------------------------
-
-
-def _fetch_uvi() -> dict[str, Any] | None:
-    """Fetch UV Index predictions for today (day=0).
-
-    Uses short timeout — this endpoint is often slow/unavailable.
-    Fails silently so the rest of the report still renders.
-    """
-    data = _cached_get("/prediccion/especifica/uvi/0", timeout=10, cache_key="uvi")
-    if not data or not isinstance(data, list):
-        return None
-    # Find the entry for Zaragoza
-    for entry in data:
-        if not isinstance(entry, dict):
-            continue
-        localidad = entry.get("localidad", entry.get("nombre", "")).strip().lower()
-        if localidad == AEMET_UVI_LOCALIDAD.strip().lower():
-            return entry
-    # Fall back to the first dict entry if no match (defensive)
-    for entry in data:
-        if isinstance(entry, dict):
-            return entry
-    return None
-
-
-def _parse_uvi(raw: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Parse UV index response into a clean dict."""
-    if not raw or not isinstance(raw, dict):
-        return None
-    try:
-        uvi = float(raw.get("uvi", raw.get("valor", 0)) or 0)
-    except (ValueError, TypeError):
-        return None
-
-    level = "Unknown"
-    for threshold, label in UV_LEVELS:
-        if uvi >= threshold:
-            level = label
-
-    return {
-        "uvi": uvi,
-        "level": level,
-        "localidad": raw.get("localidad", raw.get("nombre", "")),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -460,15 +463,23 @@ def _severity_to_warning(severity: str) -> tuple[str, str]:
 
 
 def _wind_degrees_to_compass(degrees: float | str) -> str:
-    """Convert wind direction to 16-point compass bearing.
+    """Convert wind direction to a 16-point compass bearing.
 
-    Accepts either numeric degrees or a compass string (``"N"``, ``"NE"``…).
-    Returns something like ``"NE"``, ``"SSW"``, etc.
+    AEMET returns Spanish compass points (``"N"``, ``"NE"``, ``"E"``, ``"SE"``,
+    ``"S"``, ``"SO"``, ``"O"``, ``"NO"``) or a numeric bearing in degrees.
+    Returns the English equivalent (``"SW"``, ``"W"``, ``"NW"``, …).
     """
     if isinstance(degrees, str):
-        # Already a compass point — validate and return
-        if degrees.upper() in COMPASS_POINTS:
-            return degrees.upper()
+        # Spanish compass point → English equivalent
+        es_map = {
+            "N": "N", "NE": "NE", "E": "E", "SE": "SE",
+            "S": "S", "SO": "SW", "O": "W", "NO": "NW",
+        }
+        key = degrees.strip().upper()
+        if key in es_map:
+            return es_map[key]
+        if key in COMPASS_POINTS:
+            return key
         # Might be "CALMA" or empty
         return "---"
     if degrees is None or degrees < 0:
@@ -534,14 +545,18 @@ def _temp_sparkline(values: list[float], width: int = 8) -> str:
 def _get_slot(datos: list, hour: int, key: str = "value", default=None):
     """Extract a value from AEMETs ``dato`` list-of-dicts structure.
 
-    AEMET uses ``periodo`` (2-digit string like ``"09"``) as the time key,
-    but sometimes returns ``hora`` instead.  Try both.
+    ``periodo`` is the time key.  Hourly fields (temperatura, sensTermica,
+    humedadRelativa…) use 2-digit periods like ``"09"``, while probabilities
+    (probPrecipitacion, probTormenta…) use 4-digit intervals like ``"0814"``
+    (08:00–14:00) that may roll over midnight (``"2002"``).  ``hora`` is tried
+    as a fallback key, then interval matching.
 
     Usage::
 
         _get_slot(temps, 14)          → temperature at 14:00
         _get_slot(vientos, 14, "direccion") → wind direction at 14:00
     """
+    # Exact 2-digit period match first
     for d in datos:
         try:
             raw = d.get("periodo", d.get("hora", -1))
@@ -549,6 +564,21 @@ def _get_slot(datos: list, hour: int, key: str = "value", default=None):
                 return d.get(key, default)
         except (ValueError, TypeError):
             continue
+
+    # Interval periods like "0814" / "00-24" — find the span containing *hour*
+    for d in datos:
+        span = str(d.get("periodo", "")).replace("-", "")
+        if len(span) != 4:
+            continue
+        try:
+            start, end = int(span[:2]), int(span[2:])
+        except ValueError:
+            continue
+        if end <= start:  # interval rolls over midnight
+            end += 24
+        h = hour + 24 if end >= 24 and hour < start else hour
+        if start <= h < end:
+            return d.get(key, default)
     return default
 
 
@@ -591,12 +621,17 @@ def _midday_sky(datos: list) -> str:
     return _sky_emoji("")
 
 
+def _strip_night(code: str) -> str:
+    """AEMET night sky codes append an 'n' (e.g. '17n' → '17')."""
+    return code[:-1] if isinstance(code, str) and code.endswith("n") else code
+
+
 def _sky_emoji(code: str) -> str:
-    return SKY_CODES.get(code, "")
+    return SKY_CODES.get(_strip_night(code), "")
 
 
 def _sky_short(code: str) -> str:
-    return SKY_SHORT.get(code, "")
+    return SKY_SHORT.get(_strip_night(code), "")
 
 
 def _weekday_name(fecha_str: str) -> str:
@@ -671,7 +706,7 @@ def format_morning_report() -> str | None:
     current, station = _fetch_current()
     forecast_data = _fetch_forecast()
     days = _parse_forecast(forecast_data) if forecast_data else []
-    uvi_data = _parse_uvi(_fetch_uvi())
+    daily = _parse_daily_summary(_fetch_daily())
     warnings = _parse_warnings(_fetch_warnings())
 
     if not current and not days:
@@ -713,8 +748,14 @@ def format_morning_report() -> str | None:
         orto = today.get("orto", "")
         ocaso = today.get("ocaso", "")
 
-        t_min = _min_temp(temps)
-        t_max = _max_temp(temps)
+        # Official daily min/max — the hourly day 0 only covers hours from
+        # ~08/09 local onward, so its own min/max misses the overnight low.
+        if daily:
+            t_min = daily["minima"]
+            t_max = daily["maxima"]
+        else:
+            t_min = _min_temp(temps)
+            t_max = _max_temp(temps)
 
         # Day header with sunrise-sunset
         header = f">> {weekday} {_format_date_short(fecha)}"
@@ -762,10 +803,9 @@ def format_morning_report() -> str | None:
         lines.append("")
 
         # ── UV Index ──────────────────────────────────────────────────────
-        if uvi_data:
-            uvi_val = uvi_data["uvi"]
-            uvi_lvl = uvi_data["level"]
-            lines.append(f"  UV {uvi_val:.0f} ({uvi_lvl})")
+        if daily and daily["uv"] is not None:
+            uvi_val = daily["uv"]
+            lines.append(f"  UV {uvi_val:.0f} ({_uv_label(uvi_val)})")
             lines.append("")
 
         # ── Warnings ──────────────────────────────────────────────────────
@@ -799,7 +839,7 @@ def format_ondemand() -> str | None:
     current, station = _fetch_current()
     forecast_data = _fetch_forecast()
     days = _parse_forecast(forecast_data) if forecast_data else []
-    uvi_data = _parse_uvi(_fetch_uvi())
+    daily = _parse_daily_summary(_fetch_daily())
     warnings = _parse_warnings(_fetch_warnings())
 
     if not current and not days:
@@ -828,10 +868,9 @@ def format_ondemand() -> str | None:
         lines.append("")
 
     # ── UV Index ──────────────────────────────────────────────────────────
-    if uvi_data:
-        uvi_val = uvi_data["uvi"]
-        uvi_lvl = uvi_data["level"]
-        lines.append(f"  UV {uvi_val:.0f} ({uvi_lvl})")
+    if daily and daily["uv"] is not None:
+        uvi_val = daily["uv"]
+        lines.append(f"  UV {uvi_val:.0f} ({_uv_label(uvi_val)})")
         lines.append("")
 
     # ── Warnings ──────────────────────────────────────────────────────────
@@ -868,8 +907,13 @@ def format_ondemand() -> str | None:
         orto = today.get("orto", "")
         ocaso = today.get("ocaso", "")
 
-        t_min = _min_temp(temps)
-        t_max = _max_temp(temps)
+        # Official daily min/max (see format_morning_report for why)
+        if daily:
+            t_min = daily["minima"]
+            t_max = daily["maxima"]
+        else:
+            t_min = _min_temp(temps)
+            t_max = _max_temp(temps)
 
         # Day header
         day_label = f">> {weekday} {_format_date_short(fecha)}"
