@@ -30,6 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 import config as cfg
 from system_monitor import monitor as sysmon
 from weather_forecaster import weather_aemet
+from mesh_weather import weather_mesh as mw
 from price_watcher import price_watcher as pw
 from reminder import reminder as rmd
 from impulse_buy import wish as ibw
@@ -371,6 +372,26 @@ async def daily_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         _schedule_daily_report(context.job_queue)
 
 
+async def mesh_morning_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Push the mesh weather brief, then re-schedule for tomorrow."""
+    try:
+        report = mw.format_morning()
+        if report:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=ALLOWED_USER,
+                text="> Morning\n  mesh telemetry unavailable",
+            )
+    except Exception as exc:
+        log.error("Mesh morning report send failed: %s", exc)
+    finally:
+        # Re-schedule tomorrow — always, even if sending failed
+        _schedule_mesh_morning(context.job_queue)
+
+
 async def price_watch_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Hourly price check — alerts on changes."""
     log.info("Running hourly price watch…")
@@ -427,6 +448,16 @@ def _schedule_daily_report(job_queue) -> None:
     delay = _seconds_until_22_madrid()
     job_queue.run_once(daily_report_job, delay)
     log.info("Daily report scheduled at 22:00 Madrid (in %.0fs)", delay)
+
+
+def _schedule_mesh_morning(job_queue) -> None:
+    """Schedule a one-shot mesh brief (re-schedules itself)."""
+    delay = _seconds_until(cfg.MESH_MORNING_HOUR, cfg.MESH_MORNING_MINUTE)
+    job_queue.run_once(mesh_morning_job, delay)
+    log.info(
+        "Mesh morning report scheduled at %02d:%02d Madrid (in %.0fs)",
+        cfg.MESH_MORNING_HOUR, cfg.MESH_MORNING_MINUTE, delay,
+    )
 
 
 def _schedule_price_watch(job_queue) -> None:
@@ -501,7 +532,8 @@ MENU_KEYBOARD = ReplyKeyboardMarkup(
         ["🌤 Weather", "🖨 Print"],
         ["📈 Price Watch", "💸 Impulse Buy"],
         ["📢 Reminder", "👁 Lenses"],
-        ["🕵️ Monitor", "📋 Commands"],
+        ["🕵️ Monitor", "📡 Mesh"],
+        ["📋 Commands"],
     ],
     resize_keyboard=True,
 )
@@ -1365,6 +1397,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"! aemet error: {exc}")
         return
 
+    # ------- Mesh weather (Meshtastic solar node) -------
+    if text in ("📡 Mesh", "/mesh"):
+        await update.message.reply_text("~ requesting mesh telemetry")
+        try:
+            report = mw.format_ondemand()
+            if report:
+                await update.message.reply_text(report, parse_mode="Markdown")
+            else:
+                await update.message.reply_text(
+                    "! mesh telemetry unavailable. Check MESH_NODE_ID and the BLE bridge."
+                )
+        except Exception as exc:
+            await update.message.reply_text(f"! mesh error: {exc}")
+        return
+
     # ------- Monitor -------
     if text in ("🕵️ Monitor", "/monitor"):
         try:
@@ -1614,6 +1661,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "  /start       hub menu\n"
             "  /daily       daily report\n"
             "  /monitor     system monitor\n"
+            "  /mesh        mesh weather (solar node)\n"
             "  /cancel      cancel flow\n"
             "\n"
             ">> Price Watch\n"
@@ -1663,6 +1711,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("monitor", handle_message))
+    app.add_handler(CommandHandler("mesh", handle_message))
     app.add_handler(CommandHandler("priceadd", price_add_start))
     app.add_handler(CommandHandler("pricedone", price_done))
     app.add_handler(CommandHandler("cancel", price_cancel))
@@ -1680,6 +1729,7 @@ def main() -> None:
     _schedule_sampling(app.job_queue)
     _schedule_morning_report(app.job_queue)
     _schedule_daily_report(app.job_queue)
+    _schedule_mesh_morning(app.job_queue)
     _schedule_price_watch(app.job_queue)
     _schedule_reminder_check(app.job_queue)
     app.job_queue.run_repeating(lens_expiry_job, interval=3600, first=30)

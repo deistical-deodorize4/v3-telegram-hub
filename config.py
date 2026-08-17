@@ -61,6 +61,21 @@ AEMET_CCAA_ARAGON: str = "62"              # Código CCAA Aragón (avisos endpoi
 PRINTER_ADDR: str = os.environ.get("PRINTER_ADDR", "")
 
 # ---------------------------------------------------------------------------
+# Meshtastic mesh weather (solar node telemetry via the BLE bridge TCP stream)
+# ---------------------------------------------------------------------------
+MESH_HOST: str = os.environ.get("MESH_HOST", "127.0.0.1")
+MESH_PORT: int = int(os.environ.get("MESH_PORT", "4403"))
+# Solar node ID as shown in the Meshtastic app, e.g. "!dc3b65fb"
+MESH_NODE_ID: str = os.environ.get("MESH_NODE_ID", "")
+# Seconds to wait for a telemetry reply over LoRa
+MESH_TELEMETRY_TIMEOUT: float = float(os.environ.get("MESH_TELEMETRY_TIMEOUT", "25"))
+# Seconds to wait for the bridge handshake / node map
+MESH_CONNECT_TIMEOUT: float = float(os.environ.get("MESH_CONNECT_TIMEOUT", "10"))
+# Morning push time (Europe/Madrid), mirrors the AEMET brief
+MESH_MORNING_HOUR: int = int(os.environ.get("MESH_MORNING_HOUR", "9"))
+MESH_MORNING_MINUTE: int = int(os.environ.get("MESH_MORNING_MINUTE", "0"))
+
+# ---------------------------------------------------------------------------
 # Lens tracker
 # ---------------------------------------------------------------------------
 LENS_DATA: Path = DATA_DIR / "lens_tracker.json"

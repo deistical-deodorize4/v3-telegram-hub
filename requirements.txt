@@ -8,3 +8,6 @@ requests
 psutil
 python-dotenv
 Pillow
+# Live telemetry from the Meshtastic LoRa mesh (solar node weather).
+# On the Pi:  sudo apt install libbluetooth-dev  then  pip install meshtastic
+meshtastic
