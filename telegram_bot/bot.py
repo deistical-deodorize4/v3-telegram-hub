@@ -314,9 +314,13 @@ async def morning_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
                 chat_id=ALLOWED_USER, text=report, parse_mode="Markdown"
             )
         else:
+            reason = weather_aemet.aemet_fail_reason()
+            text = "> Morning\n  aemet data unavailable"
+            if reason:
+                text += f"\n  reason: {reason}"
             await context.bot.send_message(
                 chat_id=ALLOWED_USER,
-                text="> Morning\n  aemet data unavailable",
+                text=text,
             )
     except Exception as exc:
         log.error("Morning report send failed: %s", exc)
@@ -1351,9 +1355,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if report:
                 await update.message.reply_text(report, parse_mode="Markdown")
             else:
-                await update.message.reply_text(
-                    "! Could not fetch AEMET data. Check your API key and internet."
-                )
+                reason = weather_aemet.aemet_fail_reason()
+                msg = "! Could not fetch AEMET data."
+                if reason:
+                    msg += f"\n  {reason}"
+                msg += "\n  → check AEMET_API_KEY in .env; AEMET is frequently down, retry later."
+                await update.message.reply_text(msg)
         except Exception as exc:
             await update.message.reply_text(f"! aemet error: {exc}")
         return

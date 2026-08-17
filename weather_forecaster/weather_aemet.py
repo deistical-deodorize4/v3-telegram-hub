@@ -19,6 +19,7 @@ New in v2:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -26,6 +27,8 @@ from datetime import datetime, date, timedelta
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 # Ensure config is importable when run directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -117,6 +120,23 @@ COMPASS_POINTS: list[str] = [
 # AEMET API helper — two-step request/redirect pattern
 # ---------------------------------------------------------------------------
 
+# Human-readable reason for the most recent AEMET failure.  Kept as a module
+# global so the bot/CLI can show *why* a fetch failed instead of a generic
+# "check your API key and internet" message.
+_last_fail_reason: str = ""
+
+
+def _fail(reason: str) -> None:
+    """Record the most recent failure reason and log it."""
+    global _last_fail_reason
+    _last_fail_reason = reason
+    logger.warning("AEMET fetch failed: %s", reason)
+
+
+def aemet_fail_reason() -> str:
+    """Return a human-readable reason for the last AEMET failure ("" if ok)."""
+    return _last_fail_reason
+
 
 def _aemet_get(endpoint: str, timeout: int = 15,
                data_timeout: int = 20, max_retries: int = 2) -> list | dict | None:
@@ -129,8 +149,14 @@ def _aemet_get(endpoint: str, timeout: int = 15,
     Retries up to *max_retries* times on transient failures.  The AEMET
     servers are notoriously intermittent, so a retry or two avoids most
     "no data" errors in practice.
+
+    On failure returns ``None`` and records a precise reason, retrievable
+    via :func:`aemet_fail_reason`.
     """
+    global _last_fail_reason
+
     if not AEMET_API_KEY:
+        _fail("AEMET_API_KEY is empty — add your key to the .env file")
         return None
 
     base = "https://opendata.aemet.es/opendata/api"
@@ -146,20 +172,58 @@ def _aemet_get(endpoint: str, timeout: int = 15,
                 timeout=timeout,
             )
             r1.raise_for_status()
-            body = r1.json()
+            try:
+                body = r1.json()
+            except ValueError as exc:  # AEMET returned non-JSON (HTML error page…)
+                last_error = exc
+                if attempt < max_retries:
+                    time.sleep(0.5 * (2 ** attempt))
+                continue
 
             datos_url = body.get("datos")
             if not datos_url:
+                _fail(f"empty response (no data URL) from AEMET for {endpoint}")
                 return None
 
             # Step 2: fetch the actual data (data shard — can be very slow)
             r2 = requests.get(datos_url, timeout=data_timeout)
             r2.raise_for_status()
-            return r2.json()
+            try:
+                result = r2.json()
+            except ValueError as exc:  # data shard was not JSON either
+                last_error = exc
+                if attempt < max_retries:
+                    time.sleep(0.5 * (2 ** attempt))
+                continue
+
+            _last_fail_reason = ""  # success — clear any stale failure reason
+            return result
         except requests.RequestException as exc:
             last_error = exc
             if attempt < max_retries:
-                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, …
+                time.sleep(0.5 * (2 ** attempt))
+
+    if isinstance(last_error, requests.HTTPError):
+        resp = getattr(last_error, "response", None)
+        status = resp.status_code if resp is not None else 0
+        if status in (401, 403):
+            _fail(f"AEMET rejected the API key (HTTP {status}) — "
+                  f"check AEMET_API_KEY in .env")
+        elif status:
+            _fail(f"AEMET returned HTTP {status} for {endpoint}")
+        else:
+            _fail(f"AEMET request failed with an HTTP error for {endpoint}")
+    elif isinstance(last_error, requests.Timeout):
+        _fail(f"AEMET request timed out ({timeout}s/{data_timeout}s) — "
+              f"AEMET is frequently down, retry later")
+    elif isinstance(last_error, requests.ConnectionError):
+        _fail("could not reach opendata.aemet.es — check internet/DNS")
+    elif isinstance(last_error, ValueError):
+        _fail(f"AEMET returned non-JSON data for {endpoint}")
+    elif last_error is not None:
+        _fail(f"AEMET request failed: {last_error}")
+    else:
+        _fail(f"unknown AEMET failure for {endpoint}")
 
     return None
 
@@ -994,13 +1058,57 @@ def format_ondemand() -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _diag() -> int:
+    """Step-by-step connectivity check for AEMET (useful on the Pi)."""
+    print("── AEMET diagnostics ──")
+    if not AEMET_API_KEY:
+        print("  ✗ AEMET_API_KEY is empty")
+        print("    → create .env (cp .env.example .env) and set AEMET_API_KEY")
+    else:
+        print(f"  ✓ AEMET_API_KEY is set ({AEMET_API_KEY[:6]}…{AEMET_API_KEY[-4:]})")
+    print("  → checking network reachability…")
+    try:
+        probe = requests.get(
+            "https://opendata.aemet.es/opendata/api"
+            "/observacion/convencional/datos/estacion/9434P",
+            params={"api_key": AEMET_API_KEY or "probe"},
+            timeout=15,
+        )
+        print(f"  ✓ opendata.aemet.es reachable (HTTP {probe.status_code})")
+        if probe.status_code in (401, 403):
+            print("    note: server rejected the key (check AEMET_API_KEY)")
+    except requests.RequestException as exc:
+        print(f"  ✗ cannot reach opendata.aemet.es: {exc}")
+
+    _cache.clear()  # diag tests reality, not cached failures
+    report = format_ondemand()
+    if report:
+        print("\n  ✓ weather fetch OK:\n")
+        print(report)
+        return 0
+    reason = aemet_fail_reason()
+    print("\n  ✗ weather fetch failed")
+    if reason:
+        print(f"    reason: {reason}")
+    print("    → fix .env or retry later (AEMET is frequently down)")
+    return 1
+
+
 def main() -> None:
-    """Print the on-demand report to stdout."""
+    """Print the on-demand report to stdout (or run connectivity diag)."""
+    if "--diag" in sys.argv:
+        raise SystemExit(_diag())
+
     report = format_ondemand()
     if report:
         print(report)
     else:
-        print("❌ Could not fetch AEMET data. Check your API key and internet.")
+        print("❌ Could not fetch AEMET data.")
+        reason = aemet_fail_reason()
+        if reason:
+            print(f"   reason: {reason}")
+        print("   → check AEMET_API_KEY in .env and internet connectivity; "
+              "AEMET is frequently down, retry later.")
 
 
 if __name__ == "__main__":
